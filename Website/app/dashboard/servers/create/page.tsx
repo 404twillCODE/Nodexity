@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { motion } from "framer-motion";
@@ -9,6 +9,7 @@ import ServerTypeSelector from "@/components/ServerTypeSelector";
 import RamSlider from "@/components/RamSlider";
 import CreateServerSummary from "@/components/CreateServerSummary";
 import { useServerContext } from "@/components/context/ServerContext";
+import { useAssistantContext } from "@/components/context/AssistantContext";
 import {
   fadeUp,
   fadeUpTransition,
@@ -20,6 +21,7 @@ import {
 export default function CreateServerPage() {
   const router = useRouter();
   const { resourcePool, addServer } = useServerContext();
+  const { openAssistant } = useAssistantContext();
   const [serverType, setServerType] = useState<string | null>(null);
   const [version, setVersion] = useState<string | null>(null);
   const [ramAllocation, setRamAllocation] = useState(1024); // 1 GB in MB
@@ -30,6 +32,50 @@ export default function CreateServerPage() {
   const available = totalPool - currentlyUsed; // Available in MB
 
   const versions = ['1.21', '1.20.4', '1.19.4'];
+
+  // Handle AI auto-fill
+  const handleAutoFill = (data: any) => {
+    try {
+      // Validate and set server type
+      const validTypes = ['Paper', 'Fabric', 'Forge', 'Proxy'];
+      const typeMap: { [key: string]: string } = {
+        'Paper': 'Paper',
+        'Fabric': 'Fabric',
+        'Forge': 'Forge',
+        'Proxy': 'Proxy (Velocity)',
+      };
+
+      if (data.type && validTypes.includes(data.type)) {
+        setServerType(typeMap[data.type] || data.type);
+      }
+
+      // Validate and set version
+      if (data.version && versions.includes(data.version)) {
+        setVersion(data.version);
+      }
+
+      // Validate and set RAM (convert GB to MB, round to 0.25 increments, ensure within limits)
+      if (data.ram && typeof data.ram === 'number') {
+        const ramGB = Math.max(0.5, Math.min(data.ram, resourcePool.totalRam - resourcePool.usedRam));
+        // Round to nearest 0.25 GB
+        const roundedGB = Math.round(ramGB * 4) / 4;
+        const ramMB = Math.round(roundedGB * 1024);
+        // Ensure within available limits
+        const clampedRAM = Math.max(512, Math.min(ramMB, available));
+        setRamAllocation(clampedRAM);
+      }
+    } catch (error) {
+      console.error('Error parsing auto-fill data:', error);
+    }
+  };
+
+  const handleAIConfigure = () => {
+    openAssistant(
+      "Recommend the best server setup for my use case.",
+      true,
+      handleAutoFill
+    );
+  };
 
   const handleCreate = (e: React.FormEvent) => {
     e.preventDefault();
@@ -63,16 +109,27 @@ export default function CreateServerPage() {
         >
           {/* Page Header */}
           <motion.div
-            className="mb-8"
+            className="mb-8 flex items-center justify-between"
             variants={fadeUp}
             transition={fadeUpTransition}
           >
-            <h1 className="text-4xl font-bold text-foreground mb-2">
-              Create Server
-            </h1>
-            <p className="text-muted">
-              Deploy a new server from your resource pool
-            </p>
+            <div>
+              <h1 className="text-4xl font-bold text-foreground mb-2">
+                Create Server
+              </h1>
+              <p className="text-muted">
+                Deploy a new server from your resource pool
+              </p>
+            </div>
+            <motion.button
+              type="button"
+              onClick={handleAIConfigure}
+              className="px-4 py-2 border border-accent/50 text-accent rounded-lg hover:bg-accent/10 transition-colors text-sm font-medium"
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+            >
+              Let AI configure this
+            </motion.button>
           </motion.div>
 
           {/* Form */}

@@ -3,11 +3,21 @@
 import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useServerContext } from '@/components/context/ServerContext';
+import { useAssistantContext } from '@/components/context/AssistantContext';
 import { buttonHover, buttonTap } from '@/components/motionVariants';
 
 export default function FloatingAssistant() {
   const { servers, resourcePool } = useServerContext();
-  const [isOpen, setIsOpen] = useState(false);
+  const {
+    isOpen,
+    setIsOpen,
+    initialMessage,
+    autoFillMode,
+    onAutoFillCallback,
+    setInitialMessage,
+    setAutoFillMode,
+    setOnAutoFillCallback,
+  } = useAssistantContext();
   const [messages, setMessages] = useState([
     {
       id: 'welcome',
@@ -27,6 +37,20 @@ export default function FloatingAssistant() {
     scrollToBottom();
   }, [messages]);
 
+  // Handle initial message when assistant opens
+  useEffect(() => {
+    if (isOpen && initialMessage) {
+      setInputValue(initialMessage);
+      // Auto-send the message after a brief delay
+      const messageToSend = initialMessage;
+      const isAutoFill = autoFillMode;
+      setTimeout(() => {
+        sendMessage(messageToSend, isAutoFill);
+        setInitialMessage(null);
+      }, 100);
+    }
+  }, [isOpen, initialMessage, autoFillMode]);
+
   const suggestedActions = [
     'Recommend server setup',
     'How much RAM do I need?',
@@ -34,7 +58,7 @@ export default function FloatingAssistant() {
     'Why is my server lagging?',
   ];
 
-  const sendMessage = async (messageText: string) => {
+  const sendMessage = async (messageText: string, isAutoFill = false) => {
     if (!messageText.trim() || isLoading) return;
 
     // Add user message
@@ -48,20 +72,24 @@ export default function FloatingAssistant() {
     setIsLoading(true);
 
     try {
-      // Prepare context
-      const context = {
-        resourcePool: {
-          totalRam: resourcePool.totalRam,
-          usedRam: resourcePool.usedRam,
-        },
-        servers: servers.map((server) => ({
-          name: server.name,
-          type: server.type,
-          version: server.version,
-          ram: server.ram,
-          status: server.status,
-        })),
-      };
+      // Generate context string from live dashboard data
+      const totalRam = resourcePool.totalRam;
+      const usedRam = resourcePool.usedRam;
+      const remainingRam = totalRam - usedRam;
+
+      let contextString = `Current HEXNODE infrastructure:
+- Total RAM pool: ${totalRam} GB
+- Used RAM: ${usedRam} GB
+- Remaining RAM: ${remainingRam} GB`;
+
+      // Limit to first 5 servers to keep prompt size reasonable
+      const serverList = servers.slice(0, 5);
+      if (serverList.length > 0) {
+        contextString += `\n- Servers:`;
+        serverList.forEach((server) => {
+          contextString += `\n  - ${server.name} (${server.type} ${server.version}, ${server.ram} GB, ${server.status})`;
+        });
+      }
 
       // Call API
       const response = await fetch('/api/ai', {
@@ -71,7 +99,8 @@ export default function FloatingAssistant() {
         },
         body: JSON.stringify({
           message: messageText,
-          context: context,
+          context: contextString,
+          autoFill: isAutoFill || autoFillMode,
         }),
       });
 
@@ -80,6 +109,14 @@ export default function FloatingAssistant() {
       }
 
       const data = await response.json();
+      
+      // Handle auto-fill response
+      if ((isAutoFill || autoFillMode) && data.autoFill && onAutoFillCallback) {
+        onAutoFillCallback(data.autoFill);
+        setAutoFillMode(false);
+        setOnAutoFillCallback(null);
+      }
+
       const assistantMessage = {
         id: `assistant-${Date.now()}`,
         text: data.response || 'AI service unavailable',
@@ -110,7 +147,7 @@ export default function FloatingAssistant() {
 
     const message = inputValue;
     setInputValue('');
-    sendMessage(message);
+    sendMessage(message, autoFillMode);
   };
 
   return (
