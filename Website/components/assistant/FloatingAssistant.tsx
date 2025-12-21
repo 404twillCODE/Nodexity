@@ -1,10 +1,12 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useServerContext } from '@/components/context/ServerContext';
 import { buttonHover, buttonTap } from '@/components/motionVariants';
 
 export default function FloatingAssistant() {
+  const { servers, resourcePool } = useServerContext();
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState([
     {
@@ -14,6 +16,16 @@ export default function FloatingAssistant() {
     },
   ]);
   const [inputValue, setInputValue] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages]);
 
   const suggestedActions = [
     'Recommend server setup',
@@ -22,41 +34,83 @@ export default function FloatingAssistant() {
     'Why is my server lagging?',
   ];
 
-  const handleSuggestedAction = (action: string) => {
-    setMessages((prev) => [
-      ...prev,
-      {
-        id: `user-${Date.now()}`,
-        text: action,
-        isAssistant: false,
-      },
-      {
+  const sendMessage = async (messageText: string) => {
+    if (!messageText.trim() || isLoading) return;
+
+    // Add user message
+    const userMessage = {
+      id: `user-${Date.now()}`,
+      text: messageText,
+      isAssistant: false,
+    };
+
+    setMessages((prev) => [...prev, userMessage]);
+    setIsLoading(true);
+
+    try {
+      // Prepare context
+      const context = {
+        resourcePool: {
+          totalRam: resourcePool.totalRam,
+          usedRam: resourcePool.usedRam,
+        },
+        servers: servers.map((server) => ({
+          name: server.name,
+          type: server.type,
+          version: server.version,
+          ram: server.ram,
+          status: server.status,
+        })),
+      };
+
+      // Call API
+      const response = await fetch('/api/ai', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          message: messageText,
+          context: context,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('AI service unavailable');
+      }
+
+      const data = await response.json();
+      const assistantMessage = {
         id: `assistant-${Date.now()}`,
-        text: "I'll help you with that. This feature is coming soon!",
+        text: data.response || 'AI service unavailable',
         isAssistant: true,
-      },
-    ]);
+      };
+
+      setMessages((prev) => [...prev, assistantMessage]);
+    } catch (error) {
+      console.error('AI request error:', error);
+      const errorMessage = {
+        id: `assistant-${Date.now()}`,
+        text: 'AI service unavailable. Please try again later.',
+        isAssistant: true,
+      };
+      setMessages((prev) => [...prev, errorMessage]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleSuggestedAction = (action: string) => {
+    sendMessage(action);
   };
 
   const handleSend = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!inputValue.trim()) return;
+    if (!inputValue.trim() || isLoading) return;
 
-    setMessages((prev) => [
-      ...prev,
-      {
-        id: `user-${Date.now()}`,
-        text: inputValue,
-        isAssistant: false,
-      },
-      {
-        id: `assistant-${Date.now()}`,
-        text: "Thanks for your question! AI assistance is coming soon.",
-        isAssistant: true,
-      },
-    ]);
-
+    const message = inputValue;
     setInputValue('');
+    sendMessage(message);
   };
 
   return (
@@ -142,10 +196,26 @@ export default function FloatingAssistant() {
                           : 'bg-accent text-foreground'
                       }`}
                     >
-                      <p className="text-sm leading-relaxed">{message.text}</p>
+                      <p className="text-sm leading-relaxed whitespace-pre-wrap">{message.text}</p>
                     </div>
                   </motion.div>
                 ))}
+                {isLoading && (
+                  <motion.div
+                    className="flex justify-start"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                  >
+                    <div className="max-w-[80%] p-3 rounded-lg bg-foreground/5 text-foreground">
+                      <div className="flex items-center gap-2">
+                        <div className="w-2 h-2 bg-accent rounded-full animate-pulse" />
+                        <div className="w-2 h-2 bg-accent rounded-full animate-pulse" style={{ animationDelay: '0.2s' }} />
+                        <div className="w-2 h-2 bg-accent rounded-full animate-pulse" style={{ animationDelay: '0.4s' }} />
+                      </div>
+                    </div>
+                  </motion.div>
+                )}
+                <div ref={messagesEndRef} />
               </div>
 
               {/* Suggested Actions */}
@@ -180,13 +250,19 @@ export default function FloatingAssistant() {
                     value={inputValue}
                     onChange={(e) => setInputValue(e.target.value)}
                     placeholder="Ask anything about your server…"
-                    className="flex-1 px-4 py-2 bg-foreground/5 border border-foreground/10 rounded-lg text-foreground placeholder-muted focus:outline-none focus:border-accent transition-colors text-sm"
+                    disabled={isLoading}
+                    className="flex-1 px-4 py-2 bg-foreground/5 border border-foreground/10 rounded-lg text-foreground placeholder-muted focus:outline-none focus:border-accent transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed"
                   />
                   <motion.button
                     type="submit"
-                    className="px-4 py-2 bg-accent text-foreground font-medium rounded-lg hover:bg-accent/90 transition-colors"
-                    whileHover={buttonHover}
-                    whileTap={buttonTap}
+                    disabled={isLoading || !inputValue.trim()}
+                    className={`px-4 py-2 bg-accent text-foreground font-medium rounded-lg transition-colors ${
+                      isLoading || !inputValue.trim()
+                        ? 'opacity-50 cursor-not-allowed'
+                        : 'hover:bg-accent/90'
+                    }`}
+                    whileHover={!isLoading && inputValue.trim() ? buttonHover : {}}
+                    whileTap={!isLoading && inputValue.trim() ? buttonTap : {}}
                   >
                     Send
                   </motion.button>
