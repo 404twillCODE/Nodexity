@@ -1,6 +1,7 @@
 'use client';
 
-import { createContext, useContext, useState, ReactNode } from 'react';
+import { createContext, useContext, useState, ReactNode, useEffect } from 'react';
+import { useResourcePoolConfig } from './ResourcePoolConfigContext';
 
 export interface Server {
   id: string;
@@ -23,16 +24,35 @@ interface ServerContextType {
   startServer: (serverId: string) => void;
   stopServer: (serverId: string) => void;
   restartServer: (serverId: string) => void;
+  deleteServer: (serverId: string) => void;
 }
 
 const ServerContext = createContext<ServerContextType | undefined>(undefined);
 
 export function ServerProvider({ children }: { children: ReactNode }) {
+  const { config } = useResourcePoolConfig();
   const [servers, setServers] = useState<Server[]>([]);
   const [resourcePool, setResourcePool] = useState<ResourcePool>({
-    totalRam: 8,
+    totalRam: config.ram,
     usedRam: 0,
   });
+
+  // Update totalRam when config changes
+  useEffect(() => {
+    setResourcePool((prev) => ({
+      ...prev,
+      totalRam: config.ram,
+    }));
+  }, [config.ram]);
+
+  // Calculate usedRam from existing servers
+  useEffect(() => {
+    const calculatedUsedRam = servers.reduce((sum, server) => sum + server.ram, 0);
+    setResourcePool((prev) => ({
+      ...prev,
+      usedRam: calculatedUsedRam,
+    }));
+  }, [servers]);
 
   const addServer = (serverData: Omit<Server, 'id' | 'status'>) => {
     const newServer: Server = {
@@ -42,10 +62,7 @@ export function ServerProvider({ children }: { children: ReactNode }) {
     };
 
     setServers((prev) => [...prev, newServer]);
-    setResourcePool((prev) => ({
-      ...prev,
-      usedRam: prev.usedRam + serverData.ram,
-    }));
+    // usedRam will be recalculated by useEffect
   };
 
   const startServer = (serverId: string) => {
@@ -82,6 +99,11 @@ export function ServerProvider({ children }: { children: ReactNode }) {
     }, 1500);
   };
 
+  const deleteServer = (serverId: string) => {
+    setServers((prev) => prev.filter((s) => s.id !== serverId));
+    // usedRam will be recalculated by useEffect
+  };
+
   return (
     <ServerContext.Provider
       value={{
@@ -91,6 +113,7 @@ export function ServerProvider({ children }: { children: ReactNode }) {
         startServer,
         stopServer,
         restartServer,
+        deleteServer,
       }}
     >
       {children}

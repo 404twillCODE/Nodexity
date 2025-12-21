@@ -2,9 +2,10 @@
 
 import Link from "next/link";
 import { motion } from "framer-motion";
-import DashboardSidebar from "@/components/DashboardSidebar";
 import ResourceBar from "@/components/ResourceBar";
+import ServerCard from "@/components/ServerCard";
 import { useServerContext } from "@/components/context/ServerContext";
+import { useResourcePoolConfig } from "@/components/context/ResourcePoolConfigContext";
 import {
   fadeUp,
   fadeUpTransition,
@@ -15,15 +16,11 @@ import {
 
 export default function DashboardPage() {
   const { resourcePool, servers } = useServerContext();
+  const { config } = useResourcePoolConfig();
   const usedRam = resourcePool.usedRam;
   const totalRam = resourcePool.totalRam;
   return (
-    <div className="flex min-h-screen bg-background">
-      {/* Sidebar */}
-      <DashboardSidebar />
-
-      {/* Main Content */}
-      <main className="flex-1 ml-60 p-8">
+    <div className="p-8">
         <motion.div
           className="max-w-6xl mx-auto"
           initial="hidden"
@@ -46,33 +43,51 @@ export default function DashboardPage() {
 
           {/* Resource Pool Summary Card */}
           <motion.div
-            className="p-6 border border-foreground/10 rounded-lg mb-8"
+            className="p-6 border border-foreground/10 rounded-lg mb-10"
             variants={fadeUp}
             transition={fadeUpTransition}
           >
             <h2 className="text-xl font-semibold text-foreground mb-6">
               Resource Pool
             </h2>
-            <div className="flex flex-col gap-6">
+            
+            {/* RAM Usage Bar */}
+            <div className="mb-6">
               <ResourceBar
                 label="RAM"
                 value={usedRam}
                 max={totalRam}
                 unit="GB"
               />
-              <ResourceBar
-                label="CPU"
-                value={62}
-                max={100}
-                unit="%"
-                percentage={62}
-              />
-              <ResourceBar
-                label="Storage"
-                value={32}
-                max={50}
-                unit="GB"
-              />
+            </div>
+
+            {/* Resource Breakdown */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+              <div className="p-4 bg-foreground/5 rounded-lg border border-foreground/10">
+                <div className="text-sm text-muted mb-1">Total RAM</div>
+                <div className="text-2xl font-semibold text-foreground">
+                  {totalRam.toFixed(1)} GB
+                </div>
+              </div>
+              <div className="p-4 bg-foreground/5 rounded-lg border border-foreground/10">
+                <div className="text-sm text-muted mb-1">Used RAM</div>
+                <div className="text-2xl font-semibold text-foreground">
+                  {usedRam.toFixed(1)} GB
+                </div>
+              </div>
+              <div className="p-4 bg-foreground/5 rounded-lg border border-foreground/10">
+                <div className="text-sm text-muted mb-1">Available RAM</div>
+                <div className="text-2xl font-semibold text-foreground">
+                  {(totalRam - usedRam).toFixed(1)} GB
+                </div>
+              </div>
+            </div>
+
+            {/* Pooled Usage Note */}
+            <div className="pt-4 border-t border-foreground/10">
+              <p className="text-sm text-muted">
+                Resources are shared across all servers.
+              </p>
             </div>
           </motion.div>
 
@@ -105,41 +120,36 @@ export default function DashboardPage() {
                 </motion.div>
               </div>
             ) : (
-              <div className="flex flex-col gap-4">
-                {servers.slice(0, 3).map((server, index) => (
-                  <motion.div
+              <div className="grid grid-cols-1 gap-3">
+                {servers.map((server, index) => (
+                  <ServerCard
                     key={server.id}
-                    className="p-4 border border-foreground/10 rounded-lg"
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.3, delay: index * 0.1 }}
-                  >
-                    <div className="flex items-center gap-3">
-                      <h3 className="text-lg font-semibold text-foreground">
-                        {server.name}
-                      </h3>
-                      <span className="text-sm text-muted">
-                        {server.type} {server.version}
-                      </span>
-                      <span className="text-sm text-muted">
-                        • {server.ram} GB RAM
-                      </span>
-                    </div>
-                  </motion.div>
+                    id={server.id}
+                    name={server.name}
+                    type={`${server.type} ${server.version}`}
+                    ram={`${server.ram} GB`}
+                    status={server.status}
+                    index={index}
+                  />
                 ))}
-                {servers.length > 3 && (
-                  <Link
-                    href="/dashboard/servers"
-                    className="text-sm text-accent hover:text-accent/80 transition-colors text-center"
+                {servers.length > 5 && (
+                  <motion.div
+                    className="pt-2"
+                    variants={fadeUp}
+                    transition={fadeUpTransition}
                   >
-                    View all {servers.length} servers →
-                  </Link>
+                    <Link
+                      href="/dashboard/servers"
+                      className="text-sm text-accent hover:text-accent/80 transition-colors text-center block"
+                    >
+                      View all {servers.length} servers →
+                    </Link>
+                  </motion.div>
                 )}
               </div>
             )}
           </motion.div>
         </motion.div>
-      </main>
     </div>
   );
 }

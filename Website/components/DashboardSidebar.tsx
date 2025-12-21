@@ -3,8 +3,6 @@
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { motion } from "framer-motion";
-import { fadeUp, fadeUpTransition } from "@/components/motionVariants";
 
 export default function DashboardSidebar() {
   const pathname = usePathname();
@@ -12,18 +10,18 @@ export default function DashboardSidebar() {
   const navItems = [
     { name: 'Dashboard', href: '/dashboard' },
     { name: 'Servers', href: '/dashboard/servers' },
-    { name: 'Billing', href: '/dashboard/billing' },
     { name: 'Settings', href: '/dashboard/settings' },
   ];
 
+  const isActive = (href: string) => {
+    if (href === '/dashboard') {
+      return pathname === '/dashboard';
+    }
+    return pathname?.startsWith(href);
+  };
+
   return (
-    <motion.aside
-      className="fixed left-0 top-16 h-[calc(100vh-4rem)] w-60 bg-[#080A0F] border-r border-foreground/10 flex flex-col"
-      initial="hidden"
-      animate="visible"
-      variants={fadeUp}
-      transition={fadeUpTransition}
-    >
+    <aside className="fixed left-0 top-16 h-[calc(100vh-4rem)] w-60 bg-background border-r border-foreground/10 flex flex-col z-40">
       {/* Brand Section */}
       <div className="p-6 border-b border-foreground/10">
         <div className="flex items-center gap-3">
@@ -41,27 +39,37 @@ export default function DashboardSidebar() {
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 p-4">
+      <nav className="flex-1 p-4 overflow-y-auto">
         <div className="flex flex-col gap-1">
           {navItems.map((item) => {
-            const isActive = pathname === item.href;
+            const active = isActive(item.href);
             return (
               <Link
                 key={item.name}
                 href={item.href}
-                className={`px-4 py-2 rounded-lg transition-colors ${
-                  isActive
-                    ? 'bg-accent/10 text-accent'
+                className={`px-4 py-2.5 rounded-lg transition-all duration-200 ${
+                  active
+                    ? 'bg-accent/10 text-accent border-l-2 border-accent'
                     : 'text-muted hover:text-foreground hover:bg-foreground/5'
                 }`}
               >
-                {item.name}
+                <span className="text-sm font-medium">{item.name}</span>
               </Link>
             );
           })}
         </div>
       </nav>
-    </motion.aside>
+
+      {/* User Section */}
+      <div className="p-4 border-t border-foreground/10">
+        <Link
+          href="/dashboard/settings"
+          className="px-4 py-2.5 rounded-lg transition-all duration-200 text-muted hover:text-foreground hover:bg-foreground/5"
+        >
+          <span className="text-sm font-medium">Account</span>
+        </Link>
+      </div>
+    </aside>
   );
 }
 

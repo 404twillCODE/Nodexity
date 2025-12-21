@@ -66,18 +66,37 @@ export const staggerContainer = {
 
 // Button interactions
 export const buttonHover = {
-  y: -2,
-  scale: 1.01,
+  y: -1,
+  scale: 1.02,
+  transition: {
+    duration: 0.2,
+    ease: [0.4, 0, 0.2, 1],
+  },
 };
 
 export const buttonTap = {
   y: 0,
-  scale: 0.99,
+  scale: 0.98,
+  transition: {
+    duration: 0.1,
+    ease: [0.4, 0, 0.2, 1],
+  },
 };
 
 export const buttonTransition = {
   type: "spring",
   stiffness: 400,
   damping: 17,
+};
+
+// Page transition variants
+export const pageTransition = {
+  initial: { opacity: 0, y: 8 },
+  animate: { opacity: 1, y: 0 },
+  exit: { opacity: 0, y: -8 },
+  transition: {
+    duration: 0.3,
+    ease: [0.4, 0, 0.2, 1],
+  },
 };
 

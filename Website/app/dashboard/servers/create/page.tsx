@@ -4,7 +4,6 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { motion } from "framer-motion";
-import DashboardSidebar from "@/components/DashboardSidebar";
 import ServerTypeSelector from "@/components/ServerTypeSelector";
 import RamSlider from "@/components/RamSlider";
 import CreateServerSummary from "@/components/CreateServerSummary";
@@ -95,12 +94,7 @@ export default function CreateServerPage() {
   };
 
   return (
-    <div className="flex min-h-screen bg-background">
-      {/* Sidebar */}
-      <DashboardSidebar />
-
-      {/* Main Content */}
-      <main className="flex-1 ml-60 p-8">
+    <div className="p-8 min-h-screen">
         <motion.div
           className="max-w-4xl mx-auto"
           initial="hidden"
@@ -109,7 +103,7 @@ export default function CreateServerPage() {
         >
           {/* Page Header */}
           <motion.div
-            className="mb-8 flex items-center justify-between"
+            className="mb-10 flex items-center justify-between"
             variants={fadeUp}
             transition={fadeUpTransition}
           >
@@ -216,7 +210,6 @@ export default function CreateServerPage() {
             </motion.div>
           </form>
         </motion.div>
-      </main>
     </div>
   );
 }

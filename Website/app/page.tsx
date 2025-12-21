@@ -1,8 +1,10 @@
 'use client';
 
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import ScrollIndicator from "@/components/ScrollIndicator";
+import { useResourcePoolConfig } from "@/components/context/ResourcePoolConfigContext";
 import {
   heroFadeUp,
   heroTransition,
@@ -16,6 +18,36 @@ import {
 } from "@/components/motionVariants";
 
 export default function Home() {
+  const router = useRouter();
+  const { updateConfig } = useResourcePoolConfig();
+
+  // Preset configurations
+  const PRESETS = {
+    starter: {
+      ram: 4,
+      cpu: 2,
+      storage: 50,
+      backups: false,
+    },
+    pro: {
+      ram: 8,
+      cpu: 4,
+      storage: 100,
+      backups: false,
+    },
+    power: {
+      ram: 16,
+      cpu: 8,
+      storage: 200,
+      backups: false,
+    },
+  };
+
+  const handlePresetSelect = (preset: typeof PRESETS.starter) => {
+    updateConfig(preset);
+    router.push('/dashboard');
+  };
+
   return (
     <>
       <section className="relative flex flex-col items-center justify-center min-h-[calc(100vh-4rem)] pt-16">
@@ -50,7 +82,7 @@ export default function Home() {
           </div>
           
           <motion.div
-            className="flex flex-col items-center gap-4 mt-8"
+            className="flex flex-col sm:flex-row items-center justify-center gap-4 mt-8"
             variants={heroFadeUp}
             transition={heroTransition}
           >
@@ -60,21 +92,22 @@ export default function Home() {
               transition={buttonTransition}
             >
               <Link
-                href="/register"
+                href="/pricing"
                 className="px-8 py-3 bg-accent text-foreground font-medium rounded-lg hover:bg-accent/90 transition-colors block"
               >
-                Get Started
+                Choose a Plan
               </Link>
             </motion.div>
             <motion.div
-              whileHover={{ opacity: 1 }}
-              transition={{ duration: 0.2 }}
+              whileHover={buttonHover}
+              whileTap={buttonTap}
+              transition={buttonTransition}
             >
               <Link
-                href="/pricing"
-                className="text-sm text-muted hover:text-foreground transition-colors"
+                href="/pricing/custom"
+                className="px-8 py-3 border border-foreground/20 text-foreground font-medium rounded-lg hover:border-foreground/30 hover:bg-foreground/5 transition-colors block"
               >
-                View Pricing
+                Build Your Own Pool
               </Link>
             </motion.div>
           </motion.div>
@@ -199,7 +232,7 @@ export default function Home() {
           >
             {/* Tier 1: Starter */}
             <motion.div
-              className="flex flex-col gap-4 p-6 border border-foreground/10 rounded-lg"
+              className="flex flex-col gap-4 p-6 border border-foreground/10 rounded-lg cursor-pointer"
               variants={fadeUp}
               transition={fadeUpTransition}
               whileHover={{
@@ -207,6 +240,7 @@ export default function Home() {
                 borderColor: "rgba(255, 255, 255, 0.2)",
                 boxShadow: "0 4px 12px rgba(0, 0, 0, 0.15)",
               }}
+              onClick={() => handlePresetSelect(PRESETS.starter)}
             >
               <div className="flex flex-col gap-2">
                 <h3 className="text-2xl font-semibold text-foreground">
@@ -228,7 +262,7 @@ export default function Home() {
 
             {/* Tier 2: Pro (Highlighted) */}
             <motion.div
-              className="flex flex-col gap-4 p-6 border-2 border-accent rounded-lg"
+              className="flex flex-col gap-4 p-6 border-2 border-accent rounded-lg cursor-pointer"
               variants={fadeUp}
               transition={{ ...fadeUpTransition, delay: 0.2 }}
               initial={{ scale: 1.01 }}
@@ -237,6 +271,7 @@ export default function Home() {
                 borderColor: "#8B5CF6",
                 boxShadow: "0 8px 24px rgba(139, 92, 246, 0.25)",
               }}
+              onClick={() => handlePresetSelect(PRESETS.pro)}
             >
               <div className="flex flex-col gap-2">
                 <h3 className="text-2xl font-semibold text-foreground">
@@ -258,7 +293,7 @@ export default function Home() {
 
             {/* Tier 3: Power */}
             <motion.div
-              className="flex flex-col gap-4 p-6 border border-foreground/10 rounded-lg"
+              className="flex flex-col gap-4 p-6 border border-foreground/10 rounded-lg cursor-pointer"
               variants={fadeUp}
               transition={fadeUpTransition}
               whileHover={{
@@ -266,6 +301,7 @@ export default function Home() {
                 borderColor: "rgba(255, 255, 255, 0.2)",
                 boxShadow: "0 4px 12px rgba(0, 0, 0, 0.15)",
               }}
+              onClick={() => handlePresetSelect(PRESETS.power)}
             >
               <div className="flex flex-col gap-2">
                 <h3 className="text-2xl font-semibold text-foreground">
@@ -286,8 +322,9 @@ export default function Home() {
             </motion.div>
           </motion.div>
 
+          {/* Custom Option */}
           <motion.div
-            className="flex flex-col items-center gap-6"
+            className="flex flex-col items-center gap-4"
             initial="hidden"
             whileInView="visible"
             viewport={{ once: true, margin: "-100px" }}
@@ -295,7 +332,7 @@ export default function Home() {
             transition={fadeUpTransition}
           >
             <p className="text-muted text-center">
-              Run as many Minecraft servers as you want within your resource pool.
+              Need something custom?
             </p>
             <motion.div
               whileHover={buttonHover}
@@ -303,10 +340,10 @@ export default function Home() {
               transition={buttonTransition}
             >
               <Link
-                href="/register"
-                className="px-8 py-3 bg-accent text-foreground font-medium rounded-lg hover:bg-accent/90 transition-colors block"
+                href="/pricing/custom"
+                className="px-6 py-2.5 border border-foreground/20 text-foreground font-medium rounded-lg hover:border-foreground/30 hover:bg-foreground/5 transition-colors block"
               >
-                Get Started
+                Build Your Own Pool
               </Link>
             </motion.div>
           </motion.div>

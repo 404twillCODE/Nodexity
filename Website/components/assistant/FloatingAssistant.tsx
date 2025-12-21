@@ -1,12 +1,22 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
+import { useRouter, usePathname } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useServerContext } from '@/components/context/ServerContext';
 import { useAssistantContext } from '@/components/context/AssistantContext';
 import { buttonHover, buttonTap } from '@/components/motionVariants';
 
+interface Message {
+  id: string;
+  text: string;
+  isAssistant: boolean;
+  isPassive?: boolean;
+}
+
 export default function FloatingAssistant() {
+  const router = useRouter();
+  const pathname = usePathname();
   const { servers, resourcePool } = useServerContext();
   const {
     isOpen,
@@ -18,7 +28,7 @@ export default function FloatingAssistant() {
     setAutoFillMode,
     setOnAutoFillCallback,
   } = useAssistantContext();
-  const [messages, setMessages] = useState([
+  const [messages, setMessages] = useState<Message[]>([
     {
       id: 'welcome',
       text: "Hi! I can help you configure, optimize, or troubleshoot your servers.",
@@ -27,6 +37,8 @@ export default function FloatingAssistant() {
   ]);
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isHandoff, setIsHandoff] = useState(false);
+  const [shownSuggestions, setShownSuggestions] = useState<Set<string>>(new Set());
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
@@ -36,6 +48,85 @@ export default function FloatingAssistant() {
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
+
+  // Handle passive suggestions on page change or context change
+  useEffect(() => {
+    if (!isOpen || isHandoff || isLoading) return;
+
+    // Wait a bit after page change to show suggestion
+    const timer = setTimeout(() => {
+      const totalRam = resourcePool.totalRam;
+      const usedRam = resourcePool.usedRam;
+      const remainingRam = totalRam - usedRam;
+      const usagePercent = totalRam > 0 ? (usedRam / totalRam) * 100 : 0;
+
+      // Create a unique key for this context
+      const contextKey = `${pathname}-${Math.floor(usagePercent / 10)}-${servers.length}`;
+
+      // Don't show if already shown for this context
+      if (shownSuggestions.has(contextKey)) {
+        return;
+      }
+
+      let suggestion: string | null = null;
+
+      // Create Server page suggestions
+      if (pathname?.includes('/servers/create')) {
+        if (usagePercent > 80) {
+          suggestion = "You're using most of your RAM pool — new servers will be limited.";
+        } else if (servers.length > 0 && remainingRam < 2) {
+          suggestion = "Remaining RAM is low — consider optimizing existing servers or expanding your pool.";
+        } else if (servers.length === 0 && totalRam > 8) {
+          suggestion = "You have plenty of RAM available — you can run multiple servers or allocate more to a single server.";
+        } else {
+          suggestion = "Paper performs best when RAM is not fully saturated — leave some headroom for optimal performance.";
+        }
+      }
+      // Server Detail page suggestions
+      else if (pathname?.includes('/servers/') && !pathname?.includes('/create')) {
+        const serverId = pathname.split('/').pop();
+        const currentServer = servers.find(s => s.id === serverId);
+        
+        if (currentServer) {
+          const serverRamPercent = totalRam > 0 ? (currentServer.ram / totalRam) * 100 : 0;
+          
+          if (serverRamPercent > 50) {
+            suggestion = "This server uses most of your RAM pool — that's fine, but it will limit adding others.";
+          } else if (currentServer.ram < 1) {
+            suggestion = "Servers with less than 1 GB RAM may experience performance issues with multiple players.";
+          } else if (currentServer.type?.toLowerCase().includes('paper') && currentServer.ram < 2) {
+            suggestion = "Paper servers benefit from at least 2 GB RAM for stable performance with 10+ players.";
+          }
+        }
+      }
+      // Dashboard/Servers list suggestions
+      else if (pathname?.includes('/dashboard') || (pathname?.includes('/servers') && !pathname?.includes('/create'))) {
+        if (servers.length === 0) {
+          suggestion = "Start by creating a Paper server — it's the most popular and well-optimized option.";
+        } else if (usagePercent > 70 && servers.length > 1) {
+          suggestion = "Your RAM pool is getting full — consider consolidating servers or expanding your pool.";
+        } else if (servers.length > 3 && remainingRam < 1) {
+          suggestion = "Running many small servers can fragment resources — consider fewer, larger servers.";
+        }
+      }
+
+      if (suggestion) {
+        setShownSuggestions(prev => new Set(prev).add(contextKey));
+        
+        const suggestionMessage: Message = {
+          id: `suggestion-${Date.now()}`,
+          text: suggestion,
+          isAssistant: true,
+          isPassive: true,
+        };
+        
+        setMessages((prev) => [...prev, suggestionMessage]);
+      }
+    }, 2000); // 2 second delay after page change
+
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pathname, isOpen, resourcePool.totalRam, resourcePool.usedRam, servers, isHandoff, isLoading]);
 
   // Handle initial message when assistant opens
   useEffect(() => {
@@ -59,7 +150,7 @@ export default function FloatingAssistant() {
   ];
 
   const sendMessage = async (messageText: string, isAutoFill = false) => {
-    if (!messageText.trim() || isLoading) return;
+    if (!messageText.trim() || isLoading || isHandoff) return;
 
     // Add user message
     const userMessage = {
@@ -91,6 +182,12 @@ export default function FloatingAssistant() {
         });
       }
 
+      // Convert messages to API format (role/content), including the new user message
+      const apiMessages = [...messages, userMessage].map(msg => ({
+        role: msg.isAssistant ? 'assistant' : 'user',
+        content: msg.text,
+      }));
+
       // Call API
       const response = await fetch('/api/ai', {
         method: 'POST',
@@ -101,6 +198,7 @@ export default function FloatingAssistant() {
           message: messageText,
           context: contextString,
           autoFill: isAutoFill || autoFillMode,
+          messages: apiMessages,
         }),
       });
 
@@ -115,6 +213,11 @@ export default function FloatingAssistant() {
         onAutoFillCallback(data.autoFill);
         setAutoFillMode(false);
         setOnAutoFillCallback(null);
+      }
+
+      // Check if we're in HANDOFF state
+      if (data.state === 'HANDOFF' || (data.response && data.response.includes('CONFIGURATION READY'))) {
+        setIsHandoff(true);
       }
 
       const assistantMessage = {
@@ -135,6 +238,18 @@ export default function FloatingAssistant() {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const resetChat = () => {
+    setMessages([
+      {
+        id: 'welcome',
+        text: "Hi! I can help you configure, optimize, or troubleshoot your servers.",
+        isAssistant: true,
+      },
+    ]);
+    setIsHandoff(false);
+    setShownSuggestions(new Set());
   };
 
   const handleSuggestedAction = (action: string) => {
@@ -194,26 +309,51 @@ export default function FloatingAssistant() {
                     Server setup & optimization
                   </p>
                 </div>
-                <motion.button
-                  onClick={() => setIsOpen(false)}
-                  className="w-8 h-8 flex items-center justify-center text-muted hover:text-foreground transition-colors"
-                  whileHover={{ scale: 1.1 }}
-                  whileTap={{ scale: 0.9 }}
-                >
-                  <svg
-                    width="20"
-                    height="20"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
+                <div className="flex items-center gap-2">
+                  <motion.button
+                    onClick={resetChat}
+                    className="w-8 h-8 flex items-center justify-center text-muted hover:text-foreground transition-colors"
+                    whileHover={{ scale: 1.1 }}
+                    whileTap={{ scale: 0.9 }}
+                    title="Reset chat"
                   >
-                    <path d="M18 6L6 18" />
-                    <path d="M6 6l12 12" />
-                  </svg>
-                </motion.button>
+                    <svg
+                      width="16"
+                      height="16"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" />
+                      <path d="M21 3v5h-5" />
+                      <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" />
+                      <path d="M3 21v-5h5" />
+                    </svg>
+                  </motion.button>
+                  <motion.button
+                    onClick={() => setIsOpen(false)}
+                    className="w-8 h-8 flex items-center justify-center text-muted hover:text-foreground transition-colors"
+                    whileHover={{ scale: 1.1 }}
+                    whileTap={{ scale: 0.9 }}
+                  >
+                    <svg
+                      width="20"
+                      height="20"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <path d="M18 6L6 18" />
+                      <path d="M6 6l12 12" />
+                    </svg>
+                  </motion.button>
+                </div>
               </div>
 
               {/* Messages Area */}
@@ -229,11 +369,20 @@ export default function FloatingAssistant() {
                     <div
                       className={`max-w-[80%] p-3 rounded-lg ${
                         message.isAssistant
-                          ? 'bg-foreground/5 text-foreground'
+                          ? message.isPassive
+                            ? 'bg-foreground/3 border border-foreground/10 text-foreground/80'
+                            : 'bg-foreground/5 text-foreground'
                           : 'bg-accent text-foreground'
                       }`}
                     >
-                      <p className="text-sm leading-relaxed whitespace-pre-wrap">{message.text}</p>
+                      <p className={`text-sm leading-relaxed whitespace-pre-wrap ${
+                        message.isPassive ? 'italic' : ''
+                      }`}>
+                        {message.isPassive && (
+                          <span className="text-xs text-muted mr-2">💡</span>
+                        )}
+                        {message.text}
+                      </p>
                     </div>
                   </motion.div>
                 ))}
@@ -280,31 +429,53 @@ export default function FloatingAssistant() {
               )}
 
               {/* Input Area */}
-              <form onSubmit={handleSend} className="p-4 border-t border-foreground/10">
-                <div className="flex items-center gap-2">
-                  <input
-                    type="text"
-                    value={inputValue}
-                    onChange={(e) => setInputValue(e.target.value)}
-                    placeholder="Ask anything about your server…"
-                    disabled={isLoading}
-                    className="flex-1 px-4 py-2 bg-foreground/5 border border-foreground/10 rounded-lg text-foreground placeholder-muted focus:outline-none focus:border-accent transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed"
-                  />
+              {isHandoff ? (
+                <div className="p-4 border-t border-foreground/10 space-y-3">
+                  <div className="px-3 py-2 bg-foreground/5 border border-foreground/10 rounded-lg">
+                    <p className="text-xs text-muted mb-2">Configuration locked</p>
+                    <p className="text-sm text-foreground">
+                      The server configuration has been finalized and is ready to be applied.
+                    </p>
+                  </div>
                   <motion.button
-                    type="submit"
-                    disabled={isLoading || !inputValue.trim()}
-                    className={`px-4 py-2 bg-accent text-foreground font-medium rounded-lg transition-colors ${
-                      isLoading || !inputValue.trim()
-                        ? 'opacity-50 cursor-not-allowed'
-                        : 'hover:bg-accent/90'
-                    }`}
-                    whileHover={!isLoading && inputValue.trim() ? buttonHover : {}}
-                    whileTap={!isLoading && inputValue.trim() ? buttonTap : {}}
+                    onClick={() => {
+                      setIsOpen(false);
+                      router.push('/dashboard/servers/create');
+                    }}
+                    className="w-full px-4 py-2 bg-accent text-foreground font-medium rounded-lg hover:bg-accent/90 transition-colors"
+                    whileHover={buttonHover}
+                    whileTap={buttonTap}
                   >
-                    Send
+                    Review in Create Server
                   </motion.button>
                 </div>
-              </form>
+              ) : (
+                <form onSubmit={handleSend} className="p-4 border-t border-foreground/10">
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      value={inputValue}
+                      onChange={(e) => setInputValue(e.target.value)}
+                      placeholder="Ask anything about your server…"
+                      disabled={isLoading || isHandoff}
+                      className="flex-1 px-4 py-2 bg-foreground/5 border border-foreground/10 rounded-lg text-foreground placeholder-muted focus:outline-none focus:border-accent transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                    />
+                    <motion.button
+                      type="submit"
+                      disabled={isLoading || !inputValue.trim() || isHandoff}
+                      className={`px-4 py-2 bg-accent text-foreground font-medium rounded-lg transition-colors ${
+                        isLoading || !inputValue.trim() || isHandoff
+                          ? 'opacity-50 cursor-not-allowed'
+                          : 'hover:bg-accent/90'
+                      }`}
+                      whileHover={!isLoading && inputValue.trim() && !isHandoff ? buttonHover : {}}
+                      whileTap={!isLoading && inputValue.trim() && !isHandoff ? buttonTap : {}}
+                    >
+                      Send
+                    </motion.button>
+                  </div>
+                </form>
+              )}
             </motion.div>
           </>
         )}
