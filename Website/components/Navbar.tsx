@@ -3,6 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { motion } from "framer-motion";
+import { buttonHover, buttonTap, buttonTransition } from "@/components/motionVariants";
 
 export default function Navbar() {
   return (
@@ -45,14 +46,15 @@ export default function Navbar() {
             </Link>
           </motion.div>
           <motion.div
-            whileHover={{ opacity: 1 }}
-            transition={{ duration: 0.2 }}
+            whileHover={buttonHover}
+            whileTap={buttonTap}
+            transition={buttonTransition}
           >
             <Link
-              href="/login"
-              className="text-muted hover:text-accent transition-colors"
+              href="/dashboard"
+              className="px-4 py-2 border border-accent text-accent font-medium rounded-lg hover:bg-accent hover:text-foreground transition-colors"
             >
-              Login
+              Dashboard
             </Link>
           </motion.div>
         </div>
