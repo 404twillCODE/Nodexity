@@ -1,0 +1,55 @@
+const { contextBridge, ipcRenderer } = require('electron');
+
+contextBridge.exposeInMainWorld('electronAPI', {
+  platform: process.platform,
+  windowControls: {
+    minimize: () => ipcRenderer.send('window-minimize'),
+    maximize: () => ipcRenderer.send('window-maximize'),
+    close: () => ipcRenderer.send('window-close'),
+  },
+  server: {
+    checkJava: () => ipcRenderer.invoke('check-java'),
+    getPaperVersions: () => ipcRenderer.invoke('get-paper-versions'),
+    getSpigotVersions: () => ipcRenderer.invoke('get-spigot-versions'),
+    getVanillaVersions: () => ipcRenderer.invoke('get-vanilla-versions'),
+    getFabricVersions: () => ipcRenderer.invoke('get-fabric-versions'),
+    getForgeVersions: () => ipcRenderer.invoke('get-forge-versions'),
+    getVelocityVersions: () => ipcRenderer.invoke('get-velocity-versions'),
+    getWaterfallVersions: () => ipcRenderer.invoke('get-waterfall-versions'),
+    getBungeeCordVersions: () => ipcRenderer.invoke('get-bungeecord-versions'),
+    selectJarFile: () => ipcRenderer.invoke('select-jar-file'),
+    getSystemInfo: () => ipcRenderer.invoke('get-system-info'),
+    isSetupComplete: () => ipcRenderer.invoke('is-setup-complete'),
+    getAppSettings: () => ipcRenderer.invoke('get-app-settings'),
+    saveAppSettings: (settings) => ipcRenderer.invoke('save-app-settings', settings),
+    completeSetup: (settings) => ipcRenderer.invoke('complete-setup', settings),
+    resetSetup: () => ipcRenderer.invoke('reset-setup'),
+    showFolderDialog: (options) => ipcRenderer.invoke('show-folder-dialog', options),
+    listServers: () => ipcRenderer.invoke('list-servers'),
+    createServer: (serverName, serverType, version, ramGB, manualJarPath) => ipcRenderer.invoke('create-server', serverName, serverType, version, ramGB, manualJarPath),
+    startServer: (serverName, ramGB) => ipcRenderer.invoke('start-server', serverName, ramGB),
+    stopServer: (serverName) => ipcRenderer.invoke('stop-server', serverName),
+    restartServer: (serverName, ramGB) => ipcRenderer.invoke('restart-server', serverName, ramGB),
+    killServer: (serverName) => ipcRenderer.invoke('kill-server', serverName),
+    getServerLogs: (serverName, maxLines) => ipcRenderer.invoke('get-server-logs', serverName, maxLines),
+    setupLogStreaming: (serverName) => ipcRenderer.invoke('setup-log-streaming', serverName),
+    getPlayerCount: (serverName) => ipcRenderer.invoke('get-player-count', serverName),
+    updateServerRAM: (serverName, ramGB) => ipcRenderer.invoke('update-server-ram', serverName, ramGB),
+    sendCommand: (serverName, command) => ipcRenderer.invoke('send-server-command', serverName, command),
+    getServerFiles: (serverName, filePath) => ipcRenderer.invoke('get-server-files', serverName, filePath),
+    readServerFile: (serverName, filePath) => ipcRenderer.invoke('read-server-file', serverName, filePath),
+    writeServerFile: (serverName, filePath, content) => ipcRenderer.invoke('write-server-file', serverName, filePath, content),
+    listPlugins: (serverName) => ipcRenderer.invoke('list-plugins', serverName),
+    deletePlugin: (serverName, pluginName) => ipcRenderer.invoke('delete-plugin', serverName, pluginName),
+    listWorlds: (serverName) => ipcRenderer.invoke('list-worlds', serverName),
+    getServerProperties: (serverName) => ipcRenderer.invoke('get-server-properties', serverName),
+    updateServerProperties: (serverName, properties) => ipcRenderer.invoke('update-server-properties', serverName, properties),
+    onServerLog: (callback) => {
+      ipcRenderer.on('server-log', (event, data) => callback(data));
+    },
+    removeServerLogListener: () => {
+      ipcRenderer.removeAllListeners('server-log');
+    },
+  },
+});
+

@@ -1,6 +1,9 @@
 const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('path');
 const isDev = !app.isPackaged || process.env.NODE_ENV === 'development';
+
+// Clear module cache and reload serverManager to ensure latest functions are available
+delete require.cache[require.resolve('./serverManager')];
 const serverManager = require('./serverManager');
 
 let mainWindow = null;

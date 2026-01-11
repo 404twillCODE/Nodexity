@@ -7,7 +7,8 @@
     "dev": "concurrently \"npm run dev:react\" \"wait-on http://localhost:3000 && electron .\"",
     "dev:react": "vite",
     "build": "tsc && vite build",
-    "build:electron": "electron-builder",
+    "build:electron": "npm run build && electron-builder --win --x64",
+    "build:exe": "npm run build && electron-packager . HexNode --platform=win32 --arch=x64 --out=release --overwrite --icon=../Graphics/Logo.png",
     "preview": "vite preview",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0"
   },
@@ -27,6 +28,7 @@
     "concurrently": "^8.2.2",
     "electron": "^28.0.0",
     "electron-builder": "^24.9.1",
+    "electron-packager": "^17.1.2",
     "eslint": "^8.57.0",
     "eslint-plugin-react-hooks": "^4.6.0",
     "eslint-plugin-react-refresh": "^0.4.0",
@@ -37,4 +39,3 @@
     "wait-on": "^7.2.0"
   }
 }
-
