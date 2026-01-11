@@ -16,6 +16,7 @@ export default function SetupOptionsView({ onComplete }: SetupOptionsViewProps) 
   const [backupInterval, setBackupInterval] = useState(24);
   const [maxBackups, setMaxBackups] = useState(10);
   const [defaultRAM, setDefaultRAM] = useState(4);
+  const [maxRAM, setMaxRAM] = useState(32); // Default, will be updated from system
   const [notifications, setNotifications] = useState({
     statusChanges: true,
     crashes: true,
@@ -24,7 +25,28 @@ export default function SetupOptionsView({ onComplete }: SetupOptionsViewProps) 
 
   useEffect(() => {
     loadDefaultSettings();
+    loadSystemRAM();
   }, []);
+
+  useEffect(() => {
+    // Ensure defaultRAM doesn't exceed maxRAM when maxRAM changes
+    if (defaultRAM > maxRAM && maxRAM > 0) {
+      setDefaultRAM(maxRAM);
+    }
+  }, [maxRAM]);
+
+  const loadSystemRAM = async () => {
+    if (!window.electronAPI) return;
+    
+    try {
+      const systemInfo = await window.electronAPI.server.getSystemInfo();
+      // Use system RAM as max, but ensure minimum of 4GB
+      const systemMaxRAM = Math.max(4, Math.floor(systemInfo.memory.totalGB * 0.8)); // Use 80% of total as safe max
+      setMaxRAM(systemMaxRAM);
+    } catch (error) {
+      console.error('Failed to load system RAM:', error);
+    }
+  };
 
   const loadDefaultSettings = async () => {
     if (!window.electronAPI) return;
@@ -185,18 +207,18 @@ export default function SetupOptionsView({ onComplete }: SetupOptionsViewProps) 
                   <input
                     type="range"
                     min="1"
-                    max="32"
+                    max={maxRAM}
                     value={defaultRAM}
                     onChange={(e) => setDefaultRAM(parseInt(e.target.value))}
-                    className="flex-1 h-2 bg-background-secondary rounded-lg appearance-none cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="flex-1 h-2 bg-background-secondary rounded-lg appearance-none cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed slider-custom"
                     style={{
-                      background: `linear-gradient(to right, #2EF2A2 0%, #2EF2A2 ${(defaultRAM / 32) * 100}%, #111111 ${(defaultRAM / 32) * 100}%, #111111 100%)`
+                      background: `linear-gradient(to right, #2EF2A2 0%, #2EF2A2 ${(defaultRAM / maxRAM) * 100}%, #111111 ${(defaultRAM / maxRAM) * 100}%, #111111 100%)`
                     }}
                   />
                 </div>
                 <div className="flex justify-between text-xs text-text-muted font-mono mt-1">
                   <span>1GB</span>
-                  <span>32GB</span>
+                  <span>{maxRAM}GB</span>
                 </div>
                 <p className="text-xs text-text-muted mt-1">Default RAM for new servers</p>
               </div>

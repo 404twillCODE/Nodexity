@@ -172,5 +172,49 @@
   .custom-scrollbar::-webkit-scrollbar-thumb:hover {
     background: rgba(46, 242, 162, 0.5);
   }
+
+  /* Custom slider styles */
+  .slider-custom {
+    -webkit-appearance: none;
+    appearance: none;
+    height: 2px;
+    background: transparent;
+  }
+
+  .slider-custom::-webkit-slider-thumb {
+    appearance: none;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: white;
+    cursor: pointer;
+    border: none;
+    box-shadow: 0 0 0 3px rgba(46, 242, 162, 0.4);
+    margin-top: -8px;
+    position: relative;
+    z-index: 10;
+  }
+
+  .slider-custom::-moz-range-thumb {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: white;
+    cursor: pointer;
+    border: none;
+    box-shadow: 0 0 0 3px rgba(46, 242, 162, 0.4);
+    position: relative;
+    z-index: 10;
+  }
+
+  .slider-custom::-webkit-slider-runnable-track {
+    height: 2px;
+    background: transparent;
+  }
+
+  .slider-custom::-moz-range-track {
+    height: 2px;
+    background: transparent;
+  }
 }
 

@@ -42,61 +42,71 @@ export default function SetupView({ onNext }: SetupViewProps) {
   useEffect(() => {
     loadSystemInfo();
     
-    // Set up real-time updates every 3 seconds (less frequent to reduce stutter)
+    // Set up real-time updates every 10 seconds (much less frequent to reduce stutter)
     const startUpdates = () => {
       if (updateIntervalRef.current) clearInterval(updateIntervalRef.current);
       updateIntervalRef.current = setInterval(async () => {
-        if (!window.electronAPI) return;
+        // Don't run updates at all if scrolling
+        if (isScrollingRef.current || !window.electronAPI) return;
         
         try {
           const info = await window.electronAPI.server.getSystemInfo();
-          
-          // If scrolling, queue the update
-          if (isScrollingRef.current) {
-            pendingUpdateRef.current = info;
-          } else {
-            // Apply immediately if not scrolling
-            setSystemInfo(info);
-            pendingUpdateRef.current = null;
-          }
+          // Use requestAnimationFrame for smoother updates
+          requestAnimationFrame(() => {
+            if (!isScrollingRef.current) {
+              setSystemInfo(info);
+            }
+          });
         } catch (error) {
           console.error('Failed to load system info:', error);
         }
-      }, 3000);
+      }, 10000); // 10 seconds - much less frequent
     };
 
     startUpdates();
 
-    // Handle scroll events
-    const handleScroll = () => {
-      isScrollingRef.current = true;
+    // Handle scroll events - completely pause updates while scrolling
+    const handleScrollStart = () => {
+      if (!isScrollingRef.current) {
+        isScrollingRef.current = true;
+        // Pause updates completely
+        if (updateIntervalRef.current) {
+          clearInterval(updateIntervalRef.current);
+          updateIntervalRef.current = null;
+        }
+      }
       
       // Clear existing timeout
       if (scrollTimeoutRef.current) {
         clearTimeout(scrollTimeoutRef.current);
       }
       
-      // Set scrolling to false after scroll stops and apply pending updates
+      // Resume updates after scroll stops
       scrollTimeoutRef.current = setTimeout(() => {
         isScrollingRef.current = false;
-        // Apply any pending updates when scrolling stops
+        // Resume updates
+        startUpdates();
+        // Apply any pending updates
         if (pendingUpdateRef.current) {
           setSystemInfo(pendingUpdateRef.current);
           pendingUpdateRef.current = null;
         }
-      }, 200);
+      }, 500); // Longer delay to ensure scroll is truly stopped
     };
 
     const scrollElement = scrollContainerRef.current;
     if (scrollElement) {
-      scrollElement.addEventListener('scroll', handleScroll, { passive: true });
+      scrollElement.addEventListener('scroll', handleScrollStart, { passive: true });
+      // Also listen for wheel events for better detection
+      scrollElement.addEventListener('wheel', handleScrollStart, { passive: true });
     }
 
     return () => {
       if (updateIntervalRef.current) clearInterval(updateIntervalRef.current);
       if (scrollTimeoutRef.current) clearTimeout(scrollTimeoutRef.current);
       if (scrollElement) {
-        scrollElement.removeEventListener('scroll', handleScroll);
+        scrollElement.removeEventListener('scroll', handleScrollStart);
+        scrollElement.removeEventListener('wheel', handleScrollStart);
       }
     };
   }, []);
@@ -204,44 +214,27 @@ export default function SetupView({ onNext }: SetupViewProps) {
               <div className="space-y-2 text-text-secondary font-mono text-sm">
                 <div className="flex justify-between">
                   <span>Total:</span>
-                  <motion.span 
-                    key={`mem-total-${systemInfo.memory.totalGB}`}
-                    initial={{ opacity: 0.5 }}
-                    animate={{ opacity: 1 }}
-                    className="text-text-primary"
-                  >
+                  <span className="text-text-primary">
                     {systemInfo.memory.totalGB} GB
-                  </motion.span>
+                  </span>
                 </div>
                 <div className="flex justify-between">
                   <span>Available:</span>
-                  <motion.span 
-                    key={`mem-free-${systemInfo.memory.freeGB}`}
-                    initial={{ opacity: 0.5 }}
-                    animate={{ opacity: 1 }}
-                    className="text-text-primary"
-                  >
+                  <span className="text-text-primary">
                     {systemInfo.memory.freeGB} GB
-                  </motion.span>
+                  </span>
                 </div>
                 <div className="flex justify-between">
                   <span>Used:</span>
-                  <motion.span 
-                    key={`mem-used-${systemInfo.memory.usedGB}`}
-                    initial={{ opacity: 0.5 }}
-                    animate={{ opacity: 1 }}
-                    className="text-text-primary"
-                  >
+                  <span className="text-text-primary">
                     {systemInfo.memory.usedGB} GB
-                  </motion.span>
+                  </span>
                 </div>
                 <div className="mt-3">
                   <div className="w-full bg-background-secondary h-2 rounded-full overflow-hidden">
-                    <motion.div
-                      initial={{ width: `${(systemInfo.memory.usedGB / systemInfo.memory.totalGB) * 100}%` }}
-                      animate={{ width: `${(systemInfo.memory.usedGB / systemInfo.memory.totalGB) * 100}%` }}
-                      transition={{ duration: 0.5, ease: "easeOut" }}
-                      className="h-full bg-accent"
+                    <div
+                      className="h-full bg-accent transition-all duration-300 ease-out"
+                      style={{ width: `${(systemInfo.memory.usedGB / systemInfo.memory.totalGB) * 100}%` }}
                     />
                   </div>
                 </div>
@@ -265,44 +258,27 @@ export default function SetupView({ onNext }: SetupViewProps) {
                       <div className="space-y-1.5 text-text-secondary font-mono text-xs">
                         <div className="flex justify-between">
                           <span>Total:</span>
-                          <motion.span 
-                            key={`drive-${drive.letter}-total-${drive.totalGB}`}
-                            initial={{ opacity: 0.5 }}
-                            animate={{ opacity: 1 }}
-                            className="text-text-primary"
-                          >
+                          <span className="text-text-primary">
                             {drive.totalGB} GB
-                          </motion.span>
+                          </span>
                         </div>
                         <div className="flex justify-between">
                           <span>Available:</span>
-                          <motion.span 
-                            key={`drive-${drive.letter}-free-${drive.freeGB}`}
-                            initial={{ opacity: 0.5 }}
-                            animate={{ opacity: 1 }}
-                            className="text-text-primary"
-                          >
+                          <span className="text-text-primary">
                             {drive.freeGB} GB
-                          </motion.span>
+                          </span>
                         </div>
                         <div className="flex justify-between">
                           <span>Used:</span>
-                          <motion.span 
-                            key={`drive-${drive.letter}-used-${drive.usedGB}`}
-                            initial={{ opacity: 0.5 }}
-                            animate={{ opacity: 1 }}
-                            className="text-text-primary"
-                          >
+                          <span className="text-text-primary">
                             {drive.usedGB} GB
-                          </motion.span>
+                          </span>
                         </div>
                         <div className="mt-2">
                           <div className="w-full bg-background-secondary h-2 rounded-full overflow-hidden">
-                            <motion.div
-                              initial={{ width: `${(drive.usedGB / drive.totalGB) * 100}%` }}
-                              animate={{ width: `${(drive.usedGB / drive.totalGB) * 100}%` }}
-                              transition={{ duration: 0.5, ease: "easeOut" }}
-                              className="h-full bg-accent"
+                            <div
+                              className="h-full bg-accent transition-all duration-300 ease-out"
+                              style={{ width: `${(drive.usedGB / drive.totalGB) * 100}%` }}
                             />
                           </div>
                         </div>
