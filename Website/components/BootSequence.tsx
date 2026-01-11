@@ -12,10 +12,9 @@ const bootLines: BootLine[] = [
   { text: "HexNode System Initialization", delay: 0 },
   { text: "> Initializing modules...", delay: 500 },
   { text: "> Server Software... OK", delay: 1100 },
-  { text: "> USB Server... OK", delay: 1700 },
-  { text: "> Hosting... Planned", delay: 2300 },
-  { text: "> Recycle Host... Planned", delay: 2900 },
-  { text: "System ready.", delay: 3500 },
+  { text: "> Hosting... Planned", delay: 1700 },
+  { text: "> Recycle Host... Planned", delay: 2300 },
+  { text: "System ready.", delay: 2900 },
 ];
 
 interface BootSequenceProps {

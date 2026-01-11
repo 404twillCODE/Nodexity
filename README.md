@@ -6,16 +6,13 @@
 
 ## Overview
 
-HexNode is a local-first Minecraft server management system. It provides a desktop application for server creation and management, USB-based portable deployment, and planned hosting infrastructure. All data remains local and portable by default.
+HexNode is a local-first Minecraft server management system. It provides a desktop application for server creation and management, and planned hosting infrastructure. All data remains local and portable by default.
 
 ## Current Status
 
 ### In Development
 - **Website**: Marketing and landing site for HexNode
 - **Software**: Desktop application for creating and managing Minecraft servers
-
-### In Progress
-- **USB Server**: Complete Minecraft server deployment on USB media
 
 ### Planned
 - **Hosting**: Premium hosting infrastructure

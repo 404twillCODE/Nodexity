@@ -149,9 +149,8 @@ export default function Home() {
                   className="text-base leading-relaxed text-text-secondary sm:text-lg lg:text-xl font-mono"
                 >
                   Local-first Minecraft server management system. Provides desktop
-                  application for server creation and management, USB-based portable
-                  deployment, and planned hosting infrastructure. All data remains
-                  local and portable by default.
+                  application for server creation and management, and planned hosting
+                  infrastructure. All data remains local and portable by default.
                 </motion.p>
                 <motion.div
                   initial={{ opacity: 0, y: 20 }}
@@ -172,7 +171,7 @@ export default function Home() {
                   initial={{ opacity: 0, y: 20 }}
                   animate={bootComplete ? { opacity: 1, y: 0 } : {}}
                   transition={{ delay: 0.7, duration: 0.8, ease: [0.4, 0, 0.2, 1] }}
-                  className="grid grid-cols-3 gap-8 pt-8 border-t border-border"
+                  className="grid grid-cols-2 gap-12 pt-8 border-t border-border"
                 >
                     <div>
                       <div className="mb-3 text-xs font-mono uppercase tracking-wider text-text-muted">
@@ -188,24 +187,6 @@ export default function Home() {
                           <div className="h-1.5 w-1.5 bg-accent rounded-full"></div>
                           <span className="text-sm text-text-secondary font-mono">
                             Software
-                          </span>
-                        </motion.div>
-                      </div>
-                    </div>
-                    <div>
-                      <div className="mb-3 text-xs font-mono uppercase tracking-wider text-text-muted">
-                        In Progress
-                      </div>
-                      <div className="space-y-2">
-                        <motion.div
-                          initial={{ opacity: 0, x: -10 }}
-                          animate={bootComplete ? { opacity: 1, x: 0 } : {}}
-                          transition={{ delay: 0.8, type: "spring", stiffness: 200, damping: 25 }}
-                          className="flex items-center justify-center gap-2.5"
-                        >
-                          <div className="h-1.5 w-1.5 bg-accent/60 rounded-full"></div>
-                          <span className="text-sm text-text-secondary/80 font-mono">
-                            USB Server
                           </span>
                         </motion.div>
                       </div>
@@ -487,109 +468,6 @@ export default function Home() {
                 </motion.div>
               </div>
             </div>
-          </div>
-        </div>
-      </AnimatedSection>
-
-      {/* Module: USB Server */}
-      <AnimatedSection bootComplete={bootComplete} className="full-width-section relative bg-background-secondary">
-        <motion.div
-          style={{ y: useTransform(containerScroll, [0, 1], ["0%", "12%"]) }}
-          className="section-background depth-layer"
-        />
-        <motion.div
-          style={{ y: useTransform(containerScroll, [0, 1], ["0%", "8%"]) }}
-          className="absolute inset-0 opacity-15 pointer-events-none"
-        >
-          <div
-            className="h-full w-full"
-            style={{
-              backgroundImage: `
-                radial-gradient(circle at 70% 60%, rgba(46, 242, 162, 0.008) 0%, transparent 50%)
-              `,
-            }}
-          />
-        </motion.div>
-        <div className="section-content mx-auto w-full max-w-7xl px-4 py-24 sm:px-6 lg:px-8 lg:py-32">
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-            transition={{ type: "spring", stiffness: 100, damping: 25 }}
-            className="mb-10"
-          >
-            <h2 className="text-3xl font-semibold tracking-tight text-text-primary sm:text-4xl lg:text-5xl font-mono">
-              USB SERVER
-            </h2>
-          </motion.div>
-          <div className="grid gap-12 lg:grid-cols-2 lg:items-start lg:gap-16">
-            <div>
-              <p className="mb-6 text-base leading-relaxed text-text-secondary sm:text-lg">
-                Complete Minecraft server deployment on USB media. Server binary,
-                world data, configuration, and backups stored entirely on removable
-                media. Enables portable server deployment across host machines.
-              </p>
-              <div className="space-y-3 border-t border-border pt-6">
-                <motion.div
-                  initial={{ opacity: 0, x: -10 }}
-                  whileInView={{ opacity: 1, x: 0 }}
-                  viewport={{ once: true }}
-                  transition={{ delay: 0.1, type: "spring", stiffness: 200, damping: 25 }}
-                  className="flex items-start gap-3"
-                >
-                  <span className="mt-0.5 text-accent">→</span>
-                  <span className="text-sm leading-relaxed text-text-secondary sm:text-base">
-                    Complete server state stored on USB media
-                  </span>
-                </motion.div>
-                <motion.div
-                  initial={{ opacity: 0, x: -10 }}
-                  whileInView={{ opacity: 1, x: 0 }}
-                  viewport={{ once: true }}
-                  transition={{ delay: 0.2, type: "spring", stiffness: 200, damping: 25 }}
-                  className="flex items-start gap-3"
-                >
-                  <span className="mt-0.5 text-accent">→</span>
-                  <span className="text-sm leading-relaxed text-text-secondary sm:text-base">
-                    Portable world data and configuration
-                  </span>
-                </motion.div>
-                <motion.div
-                  initial={{ opacity: 0, x: -10 }}
-                  whileInView={{ opacity: 1, x: 0 }}
-                  viewport={{ once: true }}
-                  transition={{ delay: 0.3, type: "spring", stiffness: 200, damping: 25 }}
-                  className="flex items-start gap-3"
-                >
-                  <span className="mt-0.5 text-accent">→</span>
-                  <span className="text-sm leading-relaxed text-text-secondary sm:text-base">
-                    Plug-and-play deployment on any host
-                  </span>
-                </motion.div>
-              </div>
-            </div>
-            <FloatingCard delay={0.7} bootComplete={bootComplete}>
-              <motion.div
-                whileHover={{ y: -4 }}
-                transition={{ type: "spring", stiffness: 300, damping: 25 }}
-                className="system-card p-6"
-              >
-                <div className="card-content space-y-3">
-                  <div className="flex items-center gap-2.5 border-b border-border pb-3">
-                    <div className="h-2 w-2 bg-accent rounded-full"></div>
-                    <div className="h-3 flex-1 bg-border rounded"></div>
-                  </div>
-                  <div className="flex items-center gap-2.5 border-b border-border pb-3">
-                    <div className="h-2 w-2 bg-border rounded-full"></div>
-                    <div className="h-3 flex-1 bg-border rounded"></div>
-                  </div>
-                  <div className="flex items-center gap-2.5">
-                    <div className="h-2 w-2 bg-border rounded-full"></div>
-                    <div className="h-3 flex-1 bg-border rounded"></div>
-                  </div>
-                </div>
-              </motion.div>
-            </FloatingCard>
           </div>
         </div>
       </AnimatedSection>
