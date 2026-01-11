@@ -5,3 +5,4 @@ out/
 .env
 .env.local
 App/release/
+release/
