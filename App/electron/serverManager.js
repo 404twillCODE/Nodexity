@@ -786,8 +786,8 @@ async function getVelocityVersionForMC(mcVersion) {
             }
           }
           
-          // Fallback to latest if not found
-          resolve(velocityVersions[0] || '3.4.0');
+          // Reject if no compatible Velocity version found for this MC version
+          reject(new Error(`No compatible Velocity version found for Minecraft ${mcVersion}. Please select a supported Minecraft version.`));
         } catch (e) {
           reject(e);
         }
