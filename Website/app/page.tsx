@@ -311,6 +311,22 @@ export default function Home() {
                   </span>
                 </motion.div>
               </div>
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+                transition={{ delay: 0.4, type: "spring", stiffness: 100, damping: 25 }}
+                className="mt-8"
+              >
+                <a
+                  href="https://github.com/yourusername/hexnode/releases"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="btn-primary inline-block"
+                >
+                  <span className="relative z-20 font-mono">DOWNLOAD</span>
+                </a>
+              </motion.div>
             </div>
             <FloatingCard delay={0.5} bootComplete={bootComplete}>
               <motion.div
@@ -318,14 +334,30 @@ export default function Home() {
                 transition={{ type: "spring", stiffness: 300, damping: 25 }}
                 className="system-card p-6"
               >
-                <div className="card-content space-y-3">
-                  <div className="h-3 w-3/4 bg-border rounded"></div>
-                  <div className="h-3 w-full bg-border rounded"></div>
-                  <div className="h-3 w-5/6 bg-border rounded"></div>
-                  <div className="mt-4 flex gap-1.5 border-t border-border pt-4">
-                    <div className="h-1.5 w-1.5 bg-accent rounded-full"></div>
-                    <div className="h-1.5 w-1.5 bg-border rounded-full"></div>
-                    <div className="h-1.5 w-1.5 bg-border rounded-full"></div>
+                <div className="card-content space-y-4">
+                  <div className="flex items-center gap-3">
+                    <div className="h-5 w-32 bg-text-primary/20 rounded"></div>
+                    <div className="h-4 w-16 bg-accent/30 rounded-full"></div>
+                  </div>
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-4 text-xs font-mono">
+                      <div className="flex items-center gap-1">
+                        <span className="text-text-muted">Version:</span>
+                        <span className="h-3 w-12 bg-text-primary/20 rounded"></span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <span className="text-text-muted">Port:</span>
+                        <span className="h-3 w-10 bg-text-primary/20 rounded"></span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1 text-xs font-mono">
+                      <span className="text-text-muted">RAM:</span>
+                      <span className="h-3 w-8 bg-text-primary/20 rounded"></span>
+                    </div>
+                  </div>
+                  <div className="mt-4 flex gap-2 border-t border-border pt-4">
+                    <div className="h-7 flex-1 bg-accent/20 rounded"></div>
+                    <div className="h-7 flex-1 bg-border rounded"></div>
                   </div>
                 </div>
               </motion.div>
