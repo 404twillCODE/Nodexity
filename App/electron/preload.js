@@ -14,6 +14,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getVanillaVersions: () => ipcRenderer.invoke('get-vanilla-versions'),
     getFabricVersions: () => ipcRenderer.invoke('get-fabric-versions'),
     getForgeVersions: () => ipcRenderer.invoke('get-forge-versions'),
+    getPurpurVersions: () => ipcRenderer.invoke('get-purpur-versions'),
     getVelocityVersions: () => ipcRenderer.invoke('get-velocity-versions'),
     getWaterfallVersions: () => ipcRenderer.invoke('get-waterfall-versions'),
     getBungeeCordVersions: () => ipcRenderer.invoke('get-bungeecord-versions'),
@@ -26,7 +27,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     resetSetup: () => ipcRenderer.invoke('reset-setup'),
     showFolderDialog: (options) => ipcRenderer.invoke('show-folder-dialog', options),
     listServers: () => ipcRenderer.invoke('list-servers'),
-    createServer: (serverName, serverType, version, ramGB, manualJarPath) => ipcRenderer.invoke('create-server', serverName, serverType, version, ramGB, manualJarPath),
+    createServer: (serverName, serverType, version, ramGB, manualJarPath, displayName) => ipcRenderer.invoke('create-server', serverName, serverType, version, ramGB, manualJarPath, displayName),
     startServer: (serverName, ramGB) => ipcRenderer.invoke('start-server', serverName, ramGB),
     stopServer: (serverName) => ipcRenderer.invoke('stop-server', serverName),
     restartServer: (serverName, ramGB) => ipcRenderer.invoke('restart-server', serverName, ramGB),
@@ -44,6 +45,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     listWorlds: (serverName) => ipcRenderer.invoke('list-worlds', serverName),
     getServerProperties: (serverName) => ipcRenderer.invoke('get-server-properties', serverName),
     updateServerProperties: (serverName, properties) => ipcRenderer.invoke('update-server-properties', serverName, properties),
+    deleteServer: (serverName) => ipcRenderer.invoke('delete-server', serverName),
+    getServerUsage: (serverName) => ipcRenderer.invoke('get-server-usage', serverName),
+    getAllServersUsage: () => ipcRenderer.invoke('get-all-servers-usage'),
+    getServersDiskUsage: () => ipcRenderer.invoke('get-servers-disk-usage'),
     onServerLog: (callback) => {
       ipcRenderer.on('server-log', (event, data) => callback(data));
     },

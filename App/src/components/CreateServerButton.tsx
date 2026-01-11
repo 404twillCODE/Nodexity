@@ -2,7 +2,7 @@ import { motion } from "framer-motion";
 import { useState, useEffect, useRef } from "react";
 import { useServerManager } from "../hooks/useServerManager";
 
-type ServerType = 'paper' | 'spigot' | 'vanilla' | 'fabric' | 'forge' | 'velocity' | 'waterfall' | 'bungeecord' | 'manual';
+type ServerType = 'paper' | 'spigot' | 'vanilla' | 'fabric' | 'forge' | 'purpur' | 'velocity' | 'waterfall' | 'bungeecord' | 'manual';
 
 export default function CreateServerButton() {
   const { createServer } = useServerManager();
@@ -17,6 +17,8 @@ export default function CreateServerButton() {
   const [ramGB, setRamGB] = useState(4);
   const [maxRAM, setMaxRAM] = useState(16); // Safe default
   const [settings, setSettings] = useState<any>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [warningMessage, setWarningMessage] = useState<string | null>(null);
   const ramSliderRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -80,7 +82,20 @@ export default function CreateServerButton() {
     if (showInput && serverType) {
       setSelectedVersion(null);
       setVersions([]);
+      setErrorMessage(null);
+      setWarningMessage(null);
       loadVersions();
+      
+      // Set warning messages for specific server types
+      if (serverType === 'spigot') {
+        setWarningMessage('Spigot requires BuildTools for newer versions. Older versions may be available for direct download.');
+      } else if (serverType === 'forge') {
+        setWarningMessage('Forge installation may require manual setup. We will attempt automatic download, but you may need to use the installer from files.minecraftforge.net');
+      } else if (serverType === 'bungeecord') {
+        setWarningMessage('BungeeCord downloads may be limited. If download fails, please download manually from spigotmc.org/wiki/bungeecord');
+      } else {
+        setWarningMessage(null);
+      }
     }
   }, [serverType]);
 
@@ -115,6 +130,9 @@ export default function CreateServerButton() {
         case 'forge':
           versionsList = await window.electronAPI.server.getForgeVersions();
           break;
+        case 'purpur':
+          versionsList = await window.electronAPI.server.getPurpurVersions();
+          break;
         case 'velocity':
           versionsList = await window.electronAPI.server.getVelocityVersions();
           break;
@@ -134,9 +152,9 @@ export default function CreateServerButton() {
       }
 
       setVersions(versionsList);
-      // Auto-select latest version if none selected
+      // Auto-select latest version if none selected (first item is newest)
       if (!selectedVersion && versionsList.length > 0) {
-        setSelectedVersion(versionsList[versionsList.length - 1]);
+        setSelectedVersion(versionsList[0]);
       }
     } catch (error) {
       console.error('Failed to load versions:', error);
@@ -179,15 +197,17 @@ export default function CreateServerButton() {
 
     setIsCreating(true);
     try {
-      // Replace spaces with underscores in server name
-      const sanitizedServerName = serverName.trim().replace(/\s+/g, '_');
+      // Replace spaces with dashes for folder name, but keep original for display
+      const sanitizedServerName = serverName.trim().replace(/\s+/g, '-');
+      const displayName = serverName.trim(); // Keep original with spaces for display
       const serverRAM = ramGB || settings?.defaultRAM || 4;
       const result = await createServer(
         sanitizedServerName,
         serverType,
         selectedVersion,
         serverRAM,
-        manualJarPath
+        manualJarPath,
+        displayName // Pass display name separately
       );
       if (result.success) {
         setShowInput(false);
@@ -196,11 +216,24 @@ export default function CreateServerButton() {
         setSelectedVersion(null);
         setManualJarPath(null);
         setRamGB(settings?.defaultRAM || 4);
+        setErrorMessage(null);
+        setWarningMessage(null);
       } else {
-        alert(`Failed to create server: ${result.error || "Unknown error"}\n\nPlease check:\n- Java is installed\n- You have internet connection\n- Server name is valid`);
+        // Show error in UI instead of alert
+        const errorMsg = result.error || "Unknown error";
+        setErrorMessage(errorMsg);
+        
+        // Add helpful links based on server type
+        if (serverType === 'spigot' && errorMsg.includes('BuildTools')) {
+          setWarningMessage('Download BuildTools: https://www.spigotmc.org/wiki/buildtools/');
+        } else if (serverType === 'forge' && errorMsg.includes('installer')) {
+          setWarningMessage('Download Forge Installer: https://files.minecraftforge.net/');
+        } else if (serverType === 'bungeecord' && errorMsg.includes('download')) {
+          setWarningMessage('Download BungeeCord: https://www.spigotmc.org/wiki/bungeecord/');
+        }
       }
     } catch (error: any) {
-      alert(`Error creating server: ${error.message}\n\nPlease check:\n- Java is installed\n- You have internet connection`);
+      setErrorMessage(error.message || "Unknown error occurred");
     } finally {
       setIsCreating(false);
     }
@@ -221,6 +254,7 @@ export default function CreateServerButton() {
     { id: 'vanilla' as ServerType, name: 'Vanilla', description: 'Official Minecraft server', color: 'from-blue-500/20 to-cyan-500/20', borderColor: 'border-blue-500/50', icon: '⚡', category: 'server' },
     { id: 'fabric' as ServerType, name: 'Fabric', description: 'Mod support with Fabric API', color: 'from-purple-500/20 to-pink-500/20', borderColor: 'border-purple-500/50', icon: '🧵', category: 'server' },
     { id: 'forge' as ServerType, name: 'Forge', description: 'Mod support with Forge', color: 'from-red-500/20 to-rose-500/20', borderColor: 'border-red-500/50', icon: '🔥', category: 'server' },
+    { id: 'purpur' as ServerType, name: 'Purpur', description: 'Paper fork with better performance', color: 'from-pink-500/20 to-rose-500/20', borderColor: 'border-pink-500/50', icon: '🟣', category: 'server' },
     { id: 'velocity' as ServerType, name: 'Velocity', description: 'Modern proxy server', color: 'from-indigo-500/20 to-blue-500/20', borderColor: 'border-indigo-500/50', icon: '🚀', category: 'proxy' },
     { id: 'waterfall' as ServerType, name: 'Waterfall', description: 'BungeeCord fork proxy', color: 'from-teal-500/20 to-cyan-500/20', borderColor: 'border-teal-500/50', icon: '💧', category: 'proxy' },
     { id: 'bungeecord' as ServerType, name: 'BungeeCord', description: 'Original proxy server', color: 'from-amber-500/20 to-yellow-500/20', borderColor: 'border-amber-500/50', icon: '🌊', category: 'proxy' },
@@ -252,11 +286,10 @@ export default function CreateServerButton() {
               type="text"
               value={serverName}
               onChange={(e) => {
-                // Replace spaces with underscores as user types
-                const sanitized = e.target.value.replace(/\s+/g, '_');
-                setServerName(sanitized);
+                // Allow spaces in display name, but folder will use dashes
+                setServerName(e.target.value);
               }}
-              placeholder="my-server"
+              placeholder="my server"
               className="w-full bg-background-secondary border border-border px-4 py-3 text-text-primary font-mono text-sm focus:outline-none focus:border-accent/50 rounded relative z-10"
               disabled={isCreating}
               onKeyDown={(e) => {
@@ -307,6 +340,13 @@ export default function CreateServerButton() {
                           <div className="text-xs text-text-muted font-mono">
                             {type.description}
                           </div>
+                          {(type.id === 'spigot' || type.id === 'forge' || type.id === 'bungeecord') && (
+                            <div className="mt-1 text-[10px] text-yellow-400/80 font-mono">
+                              {type.id === 'spigot' && '⚠️ May require BuildTools'}
+                              {type.id === 'forge' && '⚠️ May require manual setup'}
+                              {type.id === 'bungeecord' && '⚠️ Limited downloads'}
+                            </div>
+                          )}
                         </div>
                         {serverType === type.id && (
                           <motion.div
@@ -417,6 +457,72 @@ export default function CreateServerButton() {
             </div>
           </div>
 
+          {/* Warning/Error Messages */}
+          {(warningMessage || errorMessage) && (
+            <div className={`p-3 rounded-lg border-2 ${
+              errorMessage 
+                ? 'border-red-500/50 bg-red-500/10 text-red-400' 
+                : 'border-yellow-500/50 bg-yellow-500/10 text-yellow-400'
+            }`}>
+              <div className="flex items-start gap-2">
+                <span className="text-lg">{errorMessage ? '⚠️' : 'ℹ️'}</span>
+                <div className="flex-1">
+                  <div className="font-mono text-sm font-semibold mb-1">
+                    {errorMessage ? 'Error' : 'Note'}
+                  </div>
+                  <div className="font-mono text-xs">
+                    {errorMessage || warningMessage}
+                  </div>
+                  {warningMessage && !errorMessage && (
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {serverType === 'spigot' && (
+                        <a 
+                          href="https://www.spigotmc.org/wiki/buildtools/" 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          className="text-xs underline hover:text-yellow-300"
+                        >
+                          Download BuildTools →
+                        </a>
+                      )}
+                      {serverType === 'forge' && (
+                        <a 
+                          href="https://files.minecraftforge.net/" 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          className="text-xs underline hover:text-yellow-300"
+                        >
+                          Download Forge Installer →
+                        </a>
+                      )}
+                      {serverType === 'bungeecord' && (
+                        <a 
+                          href="https://www.spigotmc.org/wiki/bungeecord/" 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          className="text-xs underline hover:text-yellow-300"
+                        >
+                          Download BungeeCord →
+                        </a>
+                      )}
+                    </div>
+                  )}
+                </div>
+                {errorMessage && (
+                  <button
+                    onClick={() => {
+                      setErrorMessage(null);
+                      setWarningMessage(null);
+                    }}
+                    className="text-red-400 hover:text-red-300"
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* Version Selection or Manual JAR */}
           {serverType === 'manual' ? (
             <div>
@@ -468,6 +574,18 @@ export default function CreateServerButton() {
                     {versions.map((version) => {
                       const isLatest = version === versions[0]; // First version is latest (newest first)
                       const isSelected = selectedVersion === version;
+                      // For proxy servers, show compatibility info
+                      const isProxy = ['velocity', 'waterfall', 'bungeecord'].includes(serverType);
+                      const getCompatibilityText = (v: string) => {
+                        if (!isProxy) return null;
+                        // Extract major.minor version (e.g., "1.20" from "1.20.4")
+                        const match = v.match(/^(\d+\.\d+)/);
+                        if (!match) return null;
+                        const majorMinor = match[1];
+                        // For proxy servers, show that it works with that version range
+                        return `MC ${majorMinor}+`;
+                      };
+                      const compatibilityText = getCompatibilityText(version);
                       return (
                         <motion.button
                           key={version}
@@ -482,7 +600,14 @@ export default function CreateServerButton() {
                           whileTap={!isCreating ? { scale: 0.95 } : {}}
                           style={{ pointerEvents: 'auto' }}
                         >
-                          {version}
+                          <div className="flex flex-col items-center gap-1">
+                            <span>{version}</span>
+                            {compatibilityText && (
+                              <span className="text-[10px] text-text-muted opacity-75">
+                                {compatibilityText}
+                              </span>
+                            )}
+                          </div>
                           {isLatest && (
                             <span className="absolute -top-1 -right-1 bg-accent text-background text-[10px] px-1.5 py-0.5 rounded font-mono">
                               LATEST

@@ -125,6 +125,10 @@ ipcMain.handle('get-forge-versions', async () => {
   return await serverManager.getForgeVersions();
 });
 
+ipcMain.handle('get-purpur-versions', async () => {
+  return await serverManager.getPurpurVersions();
+});
+
 ipcMain.handle('get-velocity-versions', async () => {
   return await serverManager.getVelocityVersions();
 });
@@ -159,8 +163,8 @@ ipcMain.handle('list-servers', async () => {
   return await serverManager.listServers();
 });
 
-ipcMain.handle('create-server', async (event, serverName, serverType, version, ramGB, manualJarPath) => {
-  return await serverManager.createServer(serverName, serverType, version, ramGB, manualJarPath);
+ipcMain.handle('create-server', async (event, serverName, serverType, version, ramGB, manualJarPath, displayName) => {
+  return await serverManager.createServer(serverName, serverType, version, ramGB, manualJarPath, displayName);
 });
 
 ipcMain.handle('start-server', async (event, serverName, ramGB) => {
@@ -294,6 +298,22 @@ ipcMain.handle('send-server-command', async (event, serverName, command) => {
     return { success: true };
   }
   return { success: false, error: 'Server not running' };
+});
+
+ipcMain.handle('delete-server', async (event, serverName) => {
+  return await serverManager.deleteServer(serverName);
+});
+
+ipcMain.handle('get-server-usage', async (event, serverName) => {
+  return await serverManager.getServerUsage(serverName);
+});
+
+ipcMain.handle('get-all-servers-usage', async () => {
+  return await serverManager.getAllServersUsage();
+});
+
+ipcMain.handle('get-servers-disk-usage', async () => {
+  return await serverManager.getServersDiskUsage();
 });
 
 app.whenReady().then(() => {

@@ -22,14 +22,16 @@ interface ConsoleLine {
 }
 
 export default function ServerDetailView({ serverName, onBack }: ServerDetailViewProps) {
-  const { servers, sendCommand, startServer, stopServer, restartServer, killServer, loading } = useServerManager();
+  const { servers, sendCommand, startServer, stopServer, restartServer, killServer, deleteServer, getServerUsage, loading } = useServerManager();
   const [isRestarting, setIsRestarting] = useState(false);
   const [showKillConfirm, setShowKillConfirm] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [activeTab, setActiveTab] = useState<Tab>("console");
   const [lines, setLines] = useState<ConsoleLine[]>([]);
   const [input, setInput] = useState("");
   const [autoScroll, setAutoScroll] = useState(true);
   const [settings, setSettings] = useState<any>(null);
+  const [serverUsage, setServerUsage] = useState<{ cpu: number; ram: number; ramMB: number } | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const server = servers.find(s => s.name === serverName);
@@ -49,6 +51,34 @@ export default function ServerDetailView({ serverName, onBack }: ServerDetailVie
     };
     loadSettings();
   }, []);
+
+  // Poll server usage when running
+  useEffect(() => {
+    if (!isRunning || !serverName) {
+      setServerUsage(null);
+      return;
+    }
+
+    const updateUsage = async () => {
+      if (!window.electronAPI) return;
+      try {
+        const result = await getServerUsage(serverName);
+        if (result.success && result.cpu !== undefined && result.ramMB !== undefined) {
+          setServerUsage({
+            cpu: result.cpu,
+            ram: result.ram || result.ramMB / 1024,
+            ramMB: result.ramMB
+          });
+        }
+      } catch (error) {
+        console.error('Failed to get server usage:', error);
+      }
+    };
+
+    updateUsage();
+    const interval = setInterval(updateUsage, 2000); // Update every 2 seconds
+    return () => clearInterval(interval);
+  }, [isRunning, serverName, getServerUsage]);
 
   useEffect(() => {
     if (!window.electronAPI || !serverName) return;
@@ -199,6 +229,26 @@ export default function ServerDetailView({ serverName, onBack }: ServerDetailVie
     setShowKillConfirm(false);
   };
 
+  const handleDelete = async () => {
+    if (!showDeleteConfirm) {
+      setShowDeleteConfirm(true);
+      return;
+    }
+    
+    if (!confirm(`Are you sure you want to delete "${serverName}"? This will permanently delete all server files and cannot be undone.`)) {
+      setShowDeleteConfirm(false);
+      return;
+    }
+    
+    const result = await deleteServer(serverName);
+    if (result.success) {
+      onBack(); // Go back to server list
+    } else {
+      alert(`Failed to delete server: ${result.error}`);
+      setShowDeleteConfirm(false);
+    }
+  };
+
   if (!server) {
     return (
       <div className="h-full flex items-center justify-center bg-background">
@@ -240,6 +290,13 @@ export default function ServerDetailView({ serverName, onBack }: ServerDetailVie
                 <span>Version: {server.version}</span>
                 <span>Port: {server.port}</span>
                 {server.ramGB && <span>RAM: {server.ramGB}GB</span>}
+                {isRunning && serverUsage && (
+                  <>
+                    <span className="text-accent">•</span>
+                    <span>CPU: {serverUsage.cpu.toFixed(1)}%</span>
+                    <span>RAM: {serverUsage.ramMB.toFixed(0)} MB</span>
+                  </>
+                )}
               </div>
             </div>
           </div>
@@ -298,6 +355,15 @@ export default function ServerDetailView({ serverName, onBack }: ServerDetailVie
                 </motion.button>
               </>
             )}
+            <div className="h-8 w-px bg-border mx-2"></div>
+            <motion.button
+              onClick={handleDelete}
+              className={showDeleteConfirm ? "bg-red-500 hover:bg-red-600 px-4 py-2 rounded font-mono text-sm uppercase tracking-wider transition-colors" : "btn-secondary"}
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+            >
+              {showDeleteConfirm ? "CONFIRM DELETE" : "DELETE"}
+            </motion.button>
           </div>
         </div>
       </div>

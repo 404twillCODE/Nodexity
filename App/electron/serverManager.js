@@ -1,4 +1,4 @@
-const { spawn } = require('child_process');
+const { spawn, execSync } = require('child_process');
 const fs = require('fs').promises;
 const path = require('path');
 const os = require('os');
@@ -42,7 +42,7 @@ async function getSystemInfo() {
     const drives = [];
     
     try {
-      if (process.platform === 'win32') {
+      if (os.platform() === 'win32') {
         const { execSync } = require('child_process');
         // Use PowerShell as primary method (wmic is deprecated in Windows 11)
         try {
@@ -317,7 +317,8 @@ async function getPaperVersions() {
       res.on('end', () => {
         try {
           const json = JSON.parse(data);
-          resolve(json.versions || []);
+          // Reverse to show newest first
+          resolve((json.versions || []).reverse());
         } catch (e) {
           reject(e);
         }
@@ -329,7 +330,7 @@ async function getPaperVersions() {
 // Get latest Paper version
 async function getLatestPaperVersion() {
   const versions = await getPaperVersions();
-  return versions[versions.length - 1];
+  return versions[0]; // Now newest first
 }
 
 // Get latest Paper build for a version
@@ -414,21 +415,58 @@ async function getSpigotVersions() {
   // Spigot doesn't have a public API, so we return common versions
   // Ordered from newest to oldest
   return [
-    '1.21.1', '1.21', '1.20.6', '1.20.5', '1.20.4', '1.20.2', '1.20.1', 
+    '1.21.4', '1.21.3', '1.21.2', '1.21.1', '1.21', 
+    '1.20.6', '1.20.5', '1.20.4', '1.20.2', '1.20.1', '1.20',
     '1.19.4', '1.19.3', '1.19.2', '1.19.1', '1.19',
     '1.18.2', '1.18.1', '1.18',
     '1.17.1', '1.17',
-    '1.16.5', '1.16.4', '1.16.3', '1.16.2', '1.16.1', '1.16'
+    '1.16.5', '1.16.4', '1.16.3', '1.16.2', '1.16.1', '1.16',
+    '1.15.2', '1.15.1', '1.15',
+    '1.14.4', '1.14.3', '1.14.2', '1.14.1', '1.14',
+    '1.13.2', '1.13.1', '1.13',
+    '1.12.2', '1.12.1', '1.12',
+    '1.11.2', '1.11.1', '1.11',
+    '1.10.2', '1.10.1', '1.10',
+    '1.9.4', '1.9.2', '1.9',
+    '1.8.8', '1.8.7', '1.8.6', '1.8.5', '1.8.4', '1.8.3', '1.8'
   ];
 }
 
-// Download Spigot (using GetBukkit)
+// Download Spigot
+// Note: Spigot requires BuildTools to compile, but we can try alternative sources
 async function downloadSpigot(serverPath, version) {
   const filename = `spigot-${version}.jar`;
   const filepath = path.join(serverPath, filename);
-  // GetBukkit CDN
-  const url = `https://download.getbukkit.org/spigot/spigot-${version}.jar`;
-  return await downloadFile(url, filepath);
+  
+  // Try multiple sources
+  const urls = [
+    `https://download.getbukkit.org/spigot/spigot-${version}.jar`,
+    `https://cdn.getbukkit.org/spigot/spigot-${version}.jar`
+  ];
+  
+  for (const url of urls) {
+    try {
+      await downloadFile(url, filepath);
+      return filepath;
+    } catch (error) {
+      // Try next URL
+      if (await fs.access(filepath).then(() => true).catch(() => false)) {
+        await fs.unlink(filepath).catch(() => {});
+      }
+      continue;
+    }
+  }
+  
+  // Check if this is a newer version that requires BuildTools
+  const versionParts = version.split('.').map(Number);
+  const needsBuildTools = versionParts[0] > 1 || (versionParts[0] === 1 && versionParts[1] >= 17);
+  
+  if (needsBuildTools) {
+    throw new Error(`Spigot ${version} requires BuildTools to compile. Download BuildTools from https://www.spigotmc.org/wiki/buildtools/ or use Paper instead (Spigot-compatible).`);
+  }
+  
+  // If all URLs fail for older versions
+  throw new Error(`Failed to download Spigot ${version} from available sources. Consider using Paper instead (it's Spigot-compatible), or download BuildTools from https://www.spigotmc.org/wiki/buildtools/`);
 }
 
 // Get Vanilla versions
@@ -443,8 +481,8 @@ async function getVanillaVersions() {
           const json = JSON.parse(data);
           const versions = json.versions
             .filter(v => v.type === 'release')
-            .map(v => v.id)
-            .reverse();
+            .map(v => v.id);
+          // Already in order (newest first), but ensure it's correct
           resolve(versions);
         } catch (e) {
           reject(e);
@@ -511,8 +549,8 @@ async function getFabricVersions() {
           const json = JSON.parse(data);
           const versions = json
             .filter(v => v.stable)
-            .map(v => v.version)
-            .reverse();
+            .map(v => v.version);
+          // Already newest first from API, but ensure it's correct
           resolve(versions);
         } catch (e) {
           reject(e);
@@ -616,14 +654,75 @@ async function getForgeVersions() {
 
 // Download Forge
 async function downloadForge(serverPath, version) {
-  // Forge requires installer, simplified for now
-  const filename = `forge-${version}.jar`;
-  const filepath = path.join(serverPath, filename);
-  // This is a simplified approach - Forge actually needs an installer
-  throw new Error('Forge installation requires manual setup. Please use the Forge installer.');
+  return new Promise(async (resolve, reject) => {
+    try {
+      // Forge uses Maven repository structure
+      // Format: https://maven.minecraftforge.net/net/minecraftforge/forge/{version}/forge-{version}-installer.jar
+      // But we need the server jar, not installer
+      // For server, we need: forge-{version}-server.jar
+      
+      // Parse version to get Forge version format (e.g., 1.21.1 -> 1.21.1-47.2.0)
+      // We'll need to fetch the metadata to get the actual Forge version
+      const metadataUrl = `https://files.minecraftforge.net/net/minecraftforge/forge/maven-metadata.json`;
+      
+      https.get(metadataUrl, async (res) => {
+        let data = '';
+        res.on('data', (chunk) => { data += chunk; });
+        res.on('end', async () => {
+          try {
+            const json = JSON.parse(data);
+            const forgeVersions = json[version];
+            if (!forgeVersions || !forgeVersions.length) {
+              reject(new Error(`Forge version not found for Minecraft ${version}. Please use the Forge installer manually.`));
+              return;
+            }
+            
+            // Get the latest Forge version for this MC version
+            const forgeVersion = forgeVersions[forgeVersions.length - 1];
+            const filename = `forge-${version}-${forgeVersion}-server.jar`;
+            const filepath = path.join(serverPath, filename);
+            
+            // Try to download from Maven
+            const mavenUrl = `https://maven.minecraftforge.net/net/minecraftforge/forge/${version}-${forgeVersion}/${filename}`;
+            
+            try {
+              await downloadFile(mavenUrl, filepath);
+              resolve(filepath);
+            } catch (error) {
+              // If direct download fails, suggest manual installation
+              reject(new Error(`Failed to download Forge ${version}. Please download the installer from https://files.minecraftforge.net/ and run it manually.`));
+            }
+          } catch (e) {
+            reject(new Error(`Failed to parse Forge metadata. Please use the Forge installer manually from https://files.minecraftforge.net/`));
+          }
+        });
+      }).on('error', (error) => {
+        reject(new Error(`Failed to fetch Forge metadata. Please use the Forge installer manually from https://files.minecraftforge.net/`));
+      });
+    } catch (error) {
+      reject(new Error(`Forge installation requires manual setup. Please download from https://files.minecraftforge.net/ and use the installer.`));
+    }
+  });
 }
 
-// Get Velocity versions (proxy)
+// Map Velocity version numbers to Minecraft versions they support
+// Velocity uses its own versioning (3.4.0, 3.3.0, etc.) but supports specific MC versions
+function mapVelocityToMinecraft(velocityVersion) {
+  const majorMinor = velocityVersion.split('.').slice(0, 2).join('.');
+  const versionMap = {
+    '3.4': '1.21',  // Velocity 3.4.x supports MC 1.21.x
+    '3.3': '1.20',  // Velocity 3.3.x supports MC 1.20.x
+    '3.2': '1.19',  // Velocity 3.2.x supports MC 1.19.x
+    '3.1': '1.18',  // Velocity 3.1.x supports MC 1.18.x
+    '3.0': '1.17',  // Velocity 3.0.x supports MC 1.17.x
+    '2.0': '1.16',  // Velocity 2.0.x supports MC 1.16.x
+    '1.1': '1.15',  // Velocity 1.1.x supports MC 1.15.x
+    '1.0': '1.14',  // Velocity 1.0.x supports MC 1.14.x
+  };
+  return versionMap[majorMinor] || '1.21'; // Default to latest if unknown
+}
+
+// Get Velocity versions (proxy) - returns Minecraft versions
 async function getVelocityVersions() {
   return new Promise((resolve, reject) => {
     const url = 'https://api.papermc.io/v2/projects/velocity';
@@ -633,7 +732,62 @@ async function getVelocityVersions() {
       res.on('end', () => {
         try {
           const json = JSON.parse(data);
-          resolve(json.versions || []);
+          const velocityVersions = (json.versions || []).reverse(); // Newest first
+          
+          // Map Velocity versions to Minecraft versions and get unique MC versions
+          const mcVersionMap = new Map();
+          velocityVersions.forEach(vVersion => {
+            const mcVersion = mapVelocityToMinecraft(vVersion);
+            // Store the latest Velocity version for each MC version
+            if (!mcVersionMap.has(mcVersion) || velocityVersions.indexOf(vVersion) < velocityVersions.indexOf(mcVersionMap.get(mcVersion))) {
+              mcVersionMap.set(mcVersion, vVersion);
+            }
+          });
+          
+          // Return Minecraft versions sorted newest first
+          const mcVersions = Array.from(mcVersionMap.keys()).sort((a, b) => {
+            const aParts = a.split('.').map(Number);
+            const bParts = b.split('.').map(Number);
+            for (let i = 0; i < Math.max(aParts.length, bParts.length); i++) {
+              const aVal = aParts[i] || 0;
+              const bVal = bParts[i] || 0;
+              if (bVal !== aVal) return bVal - aVal;
+            }
+            return 0;
+          });
+          
+          resolve(mcVersions);
+        } catch (e) {
+          reject(e);
+        }
+      });
+    }).on('error', reject);
+  });
+}
+
+// Get Velocity version number from Minecraft version
+async function getVelocityVersionForMC(mcVersion) {
+  return new Promise((resolve, reject) => {
+    const url = 'https://api.papermc.io/v2/projects/velocity';
+    https.get(url, (res) => {
+      let data = '';
+      res.on('data', (chunk) => { data += chunk; });
+      res.on('end', () => {
+        try {
+          const json = JSON.parse(data);
+          const velocityVersions = (json.versions || []).reverse();
+          
+          // Find the latest Velocity version that supports this MC version
+          for (const vVersion of velocityVersions) {
+            const supportedMC = mapVelocityToMinecraft(vVersion);
+            if (supportedMC === mcVersion) {
+              resolve(vVersion);
+              return;
+            }
+          }
+          
+          // Fallback to latest if not found
+          resolve(velocityVersions[0] || '3.4.0');
         } catch (e) {
           reject(e);
         }
@@ -661,6 +815,53 @@ async function getVelocityBuild(version) {
   });
 }
 
+// Get Purpur versions (Paper fork with better performance)
+async function getPurpurVersions() {
+  return new Promise((resolve, reject) => {
+    const url = 'https://api.purpurmc.org/v2/purpur';
+    https.get(url, (res) => {
+      let data = '';
+      res.on('data', (chunk) => { data += chunk; });
+      res.on('end', () => {
+        try {
+          const json = JSON.parse(data);
+          // Reverse to show newest first
+          resolve((json.versions || []).reverse());
+        } catch (e) {
+          reject(e);
+        }
+      });
+    }).on('error', reject);
+  });
+}
+
+// Get latest Purpur build for a version
+async function getPurpurBuild(version) {
+  return new Promise((resolve, reject) => {
+    const url = `https://api.purpurmc.org/v2/purpur/${version}`;
+    https.get(url, (res) => {
+      let data = '';
+      res.on('data', (chunk) => { data += chunk; });
+      res.on('end', () => {
+        try {
+          const json = JSON.parse(data);
+          resolve(json.builds.latest);
+        } catch (e) {
+          reject(e);
+        }
+      });
+    }).on('error', reject);
+  });
+}
+
+// Download Purpur
+async function downloadPurpur(serverPath, version, build) {
+  const filename = `purpur-${version}-${build}.jar`;
+  const filepath = path.join(serverPath, filename);
+  const url = `https://api.purpurmc.org/v2/purpur/${version}/${build}/download`;
+  return await downloadFile(url, filepath);
+}
+
 // Download Velocity
 async function downloadVelocity(serverPath, version, build) {
   const filename = `velocity-${version}-${build}.jar`;
@@ -679,7 +880,9 @@ async function getWaterfallVersions() {
       res.on('end', () => {
         try {
           const json = JSON.parse(data);
-          resolve(json.versions || []);
+          // Reverse to show newest first (versions are already Minecraft versions)
+          const versions = (json.versions || []).reverse();
+          resolve(versions);
         } catch (e) {
           reject(e);
         }
@@ -716,54 +919,100 @@ async function downloadWaterfall(serverPath, version, build) {
 }
 
 // Get BungeeCord versions (proxy)
+// BungeeCord doesn't have clear version mapping, so we map to Minecraft versions
 async function getBungeeCordVersions() {
-  // BungeeCord uses GitHub releases or build numbers
-  return new Promise((resolve, reject) => {
-    // Try GitHub API first
-    const url = 'https://api.github.com/repos/SpigotMC/BungeeCord/releases';
-    https.get(url, {
-      headers: { 'User-Agent': 'HexNode' }
-    }, (res) => {
-      let data = '';
-      res.on('data', (chunk) => { data += chunk; });
-      res.on('end', () => {
-        try {
-          const json = JSON.parse(data);
-          if (Array.isArray(json) && json.length > 0) {
-            const versions = json.map(r => {
-              // Extract version from tag_name (e.g., "BungeeCord-1.20" or just "1.20")
-              const tag = r.tag_name.replace(/^[Bb]ungee[Cc]ord-?/, '');
-              return tag;
-            }).filter(v => v && v.length > 0);
-            // Sort versions (newest first) - simple numeric sort
-            versions.sort((a, b) => {
-              const aNum = parseFloat(a) || 0;
-              const bNum = parseFloat(b) || 0;
-              return bNum - aNum;
-            });
-            resolve(versions);
-          } else {
-            // Fallback to common build numbers
-            resolve(['1770', '1760', '1750', '1740', '1730', '1720', '1710', '1700']);
-          }
-        } catch (e) {
-          // Fallback to common build numbers
-          resolve(['1770', '1760', '1750', '1740', '1730', '1720', '1710', '1700']);
-        }
-      });
-    }).on('error', () => {
-      // Fallback to common build numbers if API fails
-      resolve(['1770', '1760', '1750', '1740', '1730', '1720', '1710', '1700']);
-    });
-  });
+  // Map common BungeeCord builds to Minecraft versions they support
+  // Newest first
+  return [
+    '1.21.4', '1.21.3', '1.21.2', '1.21.1', '1.21',
+    '1.20.6', '1.20.5', '1.20.4', '1.20.2', '1.20.1', '1.20',
+    '1.19.4', '1.19.3', '1.19.2', '1.19.1', '1.19',
+    '1.18.2', '1.18.1', '1.18',
+    '1.17.1', '1.17',
+    '1.16.5', '1.16.4', '1.16.3', '1.16.2', '1.16.1', '1.16',
+    '1.15.2', '1.15.1', '1.15',
+    '1.14.4', '1.14.3', '1.14.2', '1.14.1', '1.14',
+    '1.13.2', '1.13.1', '1.13',
+    '1.12.2', '1.12.1', '1.12',
+    '1.11.2', '1.11.1', '1.11',
+    '1.10.2', '1.10.1', '1.10',
+    '1.9.4', '1.9.2', '1.9',
+    '1.8.9', '1.8.8', '1.8.7', '1.8.6', '1.8.5', '1.8.4', '1.8.3', '1.8'
+  ];
 }
 
 // Download BungeeCord
+// Note: BungeeCord uses build numbers, but we're accepting Minecraft versions
 async function downloadBungeeCord(serverPath, version) {
-  const filename = `BungeeCord-${version}.jar`;
-  const filepath = path.join(serverPath, filename);
-  const url = `https://ci.md-5.net/job/BungeeCord/${version}/artifact/bootstrap/target/${filename}`;
-  return await downloadFile(url, filepath);
+  return new Promise(async (resolve, reject) => {
+    try {
+      // Try GitHub releases first
+      const githubUrl = 'https://api.github.com/repos/SpigotMC/BungeeCord/releases/latest';
+      https.get(githubUrl, {
+        headers: { 'User-Agent': 'HexNode' }
+      }, async (res) => {
+        let data = '';
+        res.on('data', (chunk) => { data += chunk; });
+        res.on('end', async () => {
+          try {
+            const json = JSON.parse(data);
+            if (json.assets && json.assets.length > 0) {
+              // Find the jar file
+              const jarAsset = json.assets.find(asset => asset.name.endsWith('.jar') && !asset.name.includes('sources'));
+              if (jarAsset) {
+                const filename = jarAsset.name;
+                const filepath = path.join(serverPath, filename);
+                try {
+                  await downloadFile(jarAsset.browser_download_url, filepath);
+                  resolve(filepath);
+                  return;
+                } catch (error) {
+                  // Fall through to CI server
+                }
+              }
+            }
+          } catch (e) {
+            // Fall through to CI server
+          }
+          
+          // Fallback to CI server with latest build
+          const buildNumber = '1770';
+          const filename = `BungeeCord-${buildNumber}.jar`;
+          const filepath = path.join(serverPath, filename);
+          const ciUrl = `https://ci.md-5.net/job/BungeeCord/${buildNumber}/artifact/bootstrap/target/${filename}`;
+          
+          try {
+            await downloadFile(ciUrl, filepath);
+            resolve(filepath);
+          } catch (error) {
+            // Try alternative CI URL format
+            const altUrl = `https://ci.md-5.net/job/BungeeCord/${buildNumber}/artifact/bootstrap/target/BungeeCord.jar`;
+            try {
+              await downloadFile(altUrl, filepath);
+              resolve(filepath);
+            } catch (altError) {
+              reject(new Error(`Failed to download BungeeCord ${version}. Please download manually from https://www.spigotmc.org/wiki/bungeecord/`));
+            }
+          }
+        });
+      }).on('error', async () => {
+        // Fallback to CI server
+        const buildNumber = '1770';
+        const filename = `BungeeCord-${buildNumber}.jar`;
+        const filepath = path.join(serverPath, filename);
+        const ciUrl = `https://ci.md-5.net/job/BungeeCord/${buildNumber}/artifact/bootstrap/target/${filename}`;
+        
+        try {
+          await downloadFile(ciUrl, filepath);
+          resolve(filepath);
+        } catch (error) {
+          reject(new Error(`Failed to download BungeeCord ${version}. Please download manually from https://www.spigotmc.org/wiki/bungeecord/`));
+        }
+      });
+    } catch (error) {
+      reject(new Error(`Failed to download BungeeCord ${version}: ${error.message}. Please download manually from https://www.spigotmc.org/wiki/bungeecord/`));
+    }
+  });
 }
 
 // Load server configs
@@ -792,7 +1041,7 @@ async function getServerConfig(serverName) {
 async function saveServerConfig(serverName, config) {
   const configs = await loadServerConfigs();
   configs[serverName] = {
-    name: serverName,
+    name: config.displayName || serverName, // Use display name if provided, otherwise use serverName
     path: path.join(SERVERS_DIR, serverName),
     version: config.version || 'unknown',
     ramGB: config.ramGB || 4,
@@ -804,7 +1053,7 @@ async function saveServerConfig(serverName, config) {
 }
 
 // Create server
-async function createServer(serverName = 'default', serverType = 'paper', version = null, ramGB = null, manualJarPath = null) {
+async function createServer(serverName = 'default', serverType = 'paper', version = null, ramGB = null, manualJarPath = null, displayName = null) {
   try {
     await ensureDirectories();
     const settings = await getAppSettings();
@@ -867,15 +1116,18 @@ async function createServer(serverName = 'default', serverType = 'paper', versio
         
         case 'velocity':
           const velocityVersions = await getVelocityVersions();
-          selectedVersion = version || velocityVersions[velocityVersions.length - 1];
-          build = await getVelocityBuild(selectedVersion);
-          jarPath = await downloadVelocity(serverPath, selectedVersion, build);
+          const mcVersion = version || velocityVersions[0];
+          // Convert Minecraft version to Velocity version number
+          const velocityVersion = await getVelocityVersionForMC(mcVersion);
+          selectedVersion = mcVersion; // Store MC version for display
+          build = await getVelocityBuild(velocityVersion);
+          jarPath = await downloadVelocity(serverPath, velocityVersion, build);
           jarFile = path.basename(jarPath);
           break;
         
         case 'waterfall':
           const waterfallVersions = await getWaterfallVersions();
-          selectedVersion = version || waterfallVersions[waterfallVersions.length - 1];
+          selectedVersion = version || waterfallVersions[0];
           build = await getWaterfallBuild(selectedVersion);
           jarPath = await downloadWaterfall(serverPath, selectedVersion, build);
           jarFile = path.basename(jarPath);
@@ -885,6 +1137,14 @@ async function createServer(serverName = 'default', serverType = 'paper', versio
           const bungeeVersions = await getBungeeCordVersions();
           selectedVersion = version || bungeeVersions[0];
           jarPath = await downloadBungeeCord(serverPath, selectedVersion);
+          jarFile = path.basename(jarPath);
+          break;
+        
+        case 'purpur':
+          const purpurVersions = await getPurpurVersions();
+          selectedVersion = version || purpurVersions[0];
+          build = await getPurpurBuild(selectedVersion);
+          jarPath = await downloadPurpur(serverPath, selectedVersion, build);
           jarFile = path.basename(jarPath);
           break;
         
@@ -908,7 +1168,8 @@ async function createServer(serverName = 'default', serverType = 'paper', versio
       version: selectedVersion,
       ramGB: serverRAM,
       status: 'STOPPED',
-      port: serverPort
+      port: serverPort,
+      displayName: displayName || serverName // Store display name if provided
     });
 
     return { success: true, path: serverPath, jarFile, version: selectedVersion, build };
@@ -1076,6 +1337,191 @@ async function stopServer(serverName) {
 // Get server process for log streaming
 function getServerProcess(serverName) {
   return serverProcesses.get(serverName);
+}
+
+// Delete server
+async function deleteServer(serverName) {
+  try {
+    // Stop server if running
+    if (serverProcesses.has(serverName)) {
+      const process = serverProcesses.get(serverName);
+      if (process && !process.killed) {
+        process.kill('SIGKILL');
+      }
+      serverProcesses.delete(serverName);
+    }
+
+    // Get server directory
+    const settings = await getAppSettings();
+    const serversDir = settings.serversDirectory || SERVERS_DIR;
+    const serverPath = path.join(serversDir, serverName);
+
+    // Check if directory exists
+    try {
+      await fs.access(serverPath);
+    } catch {
+      // Directory doesn't exist, just remove from config
+      const configs = await loadServerConfigs();
+      delete configs[serverName];
+      await saveServerConfigs(configs);
+      return { success: true };
+    }
+
+    // Delete server directory and all contents
+    await fs.rm(serverPath, { recursive: true, force: true });
+
+    // Remove from config
+    const configs = await loadServerConfigs();
+    delete configs[serverName];
+    await saveServerConfigs(configs);
+
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+}
+
+// Get server usage (CPU, RAM) for a single server
+async function getServerUsage(serverName) {
+  try {
+    const process = serverProcesses.get(serverName);
+    if (!process || !process.pid) {
+      return { success: true, cpu: 0, ram: 0, ramMB: 0 };
+    }
+
+    const pid = process.pid;
+    let cpuPercent = 0;
+    let ramMB = 0;
+
+    if (os.platform() === 'win32') {
+      // Windows: Use PowerShell
+      try {
+        const cmd = `powershell -Command "Get-Process -Id ${pid} -ErrorAction SilentlyContinue | Select-Object -Property CPU,WorkingSet | ConvertTo-Json"`;
+        const output = execSync(cmd, { encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'] });
+        const processInfo = JSON.parse(output);
+        
+        if (processInfo) {
+          ramMB = Math.round((processInfo.WorkingSet || 0) / (1024 * 1024));
+          cpuPercent = 0; // CPU is cumulative, would need tracking over time
+        }
+      } catch (error) {
+        // Fallback: try wmic
+        try {
+          const wmicCmd = `wmic process where ProcessId=${pid} get WorkingSetSize /format:csv`;
+          const wmicOutput = execSync(wmicCmd, { encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'] });
+          const lines = wmicOutput.split('\n').filter(l => l.trim() && !l.startsWith('Node'));
+          if (lines.length > 0) {
+            const values = lines[0].split(',');
+            if (values.length >= 3) {
+              ramMB = Math.round(parseInt(values[2] || 0) / (1024 * 1024));
+            }
+          }
+        } catch (wmicError) {
+          // If both fail, return 0
+        }
+      }
+    } else {
+      // Linux/macOS: Use ps
+      try {
+        const psOutput = execSync(`ps -p ${pid} -o %cpu,rss --no-headers`, { encoding: 'utf8' });
+        const parts = psOutput.trim().split(/\s+/);
+        if (parts.length >= 2) {
+          cpuPercent = parseFloat(parts[0]) || 0;
+          ramMB = Math.round(parseInt(parts[1]) / 1024); // RSS is in KB
+        }
+      } catch (error) {
+        // Process might have exited
+      }
+    }
+
+    return { success: true, cpu: cpuPercent, ram: ramMB / 1024, ramMB };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+}
+
+// Get aggregate usage for all servers
+async function getAllServersUsage() {
+  try {
+    const servers = await listServers();
+    let totalCPU = 0;
+    let totalRAM = 0;
+    let totalRAMMB = 0;
+    const serverUsages = {};
+
+    for (const server of servers) {
+      if (server.status === 'RUNNING') {
+        const usage = await getServerUsage(server.name);
+        if (usage.success) {
+          totalCPU += usage.cpu || 0;
+          totalRAM += usage.ram || 0;
+          totalRAMMB += usage.ramMB || 0;
+          serverUsages[server.name] = usage;
+        }
+      }
+    }
+
+    return {
+      success: true,
+      totalCPU,
+      totalRAM,
+      totalRAMMB,
+      serverUsages
+    };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+}
+
+// Get disk usage for all servers
+async function getServersDiskUsage() {
+  try {
+    const settings = await getAppSettings();
+    const serversDir = settings.serversDirectory || SERVERS_DIR;
+    const servers = await listServers();
+    let totalSize = 0;
+
+    // Helper function to get directory size
+    const getDirectorySize = async (dirPath) => {
+      let size = 0;
+      try {
+        const files = await fs.readdir(dirPath, { withFileTypes: true });
+        for (const file of files) {
+          const filePath = path.join(dirPath, file.name);
+          if (file.isDirectory()) {
+            size += await getDirectorySize(filePath);
+          } else {
+            const stats = await fs.stat(filePath);
+            size += stats.size;
+          }
+        }
+      } catch (error) {
+        // Ignore errors
+      }
+      return size;
+    };
+
+    const serverSizes = {};
+    for (const server of servers) {
+      const serverPath = path.join(serversDir, server.name);
+      try {
+        const size = await getDirectorySize(serverPath);
+        serverSizes[server.name] = size;
+        totalSize += size;
+      } catch (error) {
+        serverSizes[server.name] = 0;
+      }
+    }
+
+    return {
+      success: true,
+      totalSize,
+      totalSizeGB: totalSize / (1024 * 1024 * 1024),
+      serverSizes
+    };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
 }
 
 // Restart server
@@ -1571,8 +2017,10 @@ module.exports = {
   getFabricVersions,
   getForgeVersions,
   getVelocityVersions,
+  getVelocityVersionForMC,
   getWaterfallVersions,
   getBungeeCordVersions,
+  getPurpurVersions,
   createServer,
   startServer,
   stopServer,
@@ -1591,6 +2039,10 @@ module.exports = {
   listWorlds,
   getServerProperties,
   updateServerProperties,
+  deleteServer,
+  getServerUsage,
+  getAllServersUsage,
+  getServersDiskUsage,
   getSystemInfo,
   isSetupComplete,
   getAppSettings,

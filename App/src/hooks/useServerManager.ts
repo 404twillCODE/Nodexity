@@ -15,6 +15,7 @@ declare global {
         getVanillaVersions: () => Promise<string[]>;
         getFabricVersions: () => Promise<string[]>;
         getForgeVersions: () => Promise<string[]>;
+        getPurpurVersions: () => Promise<string[]>;
         getVelocityVersions: () => Promise<string[]>;
         getWaterfallVersions: () => Promise<string[]>;
         getBungeeCordVersions: () => Promise<string[]>;
@@ -34,7 +35,7 @@ declare global {
         resetSetup: () => Promise<void>;
         showFolderDialog: (options: { title: string; defaultPath?: string }) => Promise<{ success: boolean; path?: string; canceled?: boolean }>;
         listServers: () => Promise<Server[]>;
-        createServer: (serverName: string, serverType: string, version?: string | null, ramGB?: number, manualJarPath?: string | null) => Promise<{ success: boolean; error?: string; path?: string; jarFile?: string; version?: string; build?: number }>;
+        createServer: (serverName: string, serverType: string, version?: string | null, ramGB?: number, manualJarPath?: string | null, displayName?: string | null) => Promise<{ success: boolean; error?: string; path?: string; jarFile?: string; version?: string; build?: number }>;
         startServer: (serverName: string, ramGB?: number) => Promise<{ success: boolean; error?: string; pid?: number }>;
         stopServer: (serverName: string) => Promise<{ success: boolean; error?: string }>;
         restartServer: (serverName: string, ramGB?: number) => Promise<{ success: boolean; error?: string; pid?: number }>;
@@ -52,6 +53,10 @@ declare global {
         listWorlds: (serverName: string) => Promise<{ success: boolean; worlds?: Array<{ name: string; size: number; modified: string }>; error?: string }>;
         getServerProperties: (serverName: string) => Promise<{ success: boolean; properties?: Record<string, string>; error?: string }>;
         updateServerProperties: (serverName: string, properties: Record<string, string>) => Promise<{ success: boolean; error?: string }>;
+        deleteServer: (serverName: string) => Promise<{ success: boolean; error?: string }>;
+        getServerUsage: (serverName: string) => Promise<{ success: boolean; cpu?: number; ram?: number; ramMB?: number; error?: string }>;
+        getAllServersUsage: () => Promise<{ success: boolean; totalCPU?: number; totalRAM?: number; totalRAMMB?: number; serverUsages?: Record<string, { cpu: number; ram: number; ramMB: number }>; error?: string }>;
+        getServersDiskUsage: () => Promise<{ success: boolean; totalSize?: number; totalSizeGB?: number; serverSizes?: Record<string, number>; error?: string }>;
         onServerLog: (callback: (data: { serverName: string; type: 'stdout' | 'stderr'; data: string }) => void) => void;
         removeServerLogListener: () => void;
       };
@@ -102,10 +107,10 @@ export function useServerManager() {
     }
   }, []);
 
-  const createServer = useCallback(async (serverName: string = 'default', serverType: string = 'paper', version?: string | null, ramGB: number = 4, manualJarPath?: string | null) => {
+  const createServer = useCallback(async (serverName: string = 'default', serverType: string = 'paper', version?: string | null, ramGB: number = 4, manualJarPath?: string | null, displayName?: string | null) => {
     if (!window.electronAPI) return { success: false, error: 'Electron API not available' };
     try {
-      const result = await window.electronAPI.server.createServer(serverName, serverType, version, ramGB, manualJarPath);
+      const result = await window.electronAPI.server.createServer(serverName, serverType, version, ramGB, manualJarPath, displayName);
       if (result.success) {
         await loadServers();
       }
@@ -208,6 +213,46 @@ export function useServerManager() {
     }
   }, []);
 
+  const deleteServer = useCallback(async (serverName: string) => {
+    if (!window.electronAPI) return { success: false, error: 'Electron API not available' };
+    try {
+      const result = await window.electronAPI.server.deleteServer(serverName);
+      if (result.success) {
+        await loadServers();
+      }
+      return result;
+    } catch (error: any) {
+      return { success: false, error: error.message };
+    }
+  }, [loadServers]);
+
+  const getServerUsage = useCallback(async (serverName: string) => {
+    if (!window.electronAPI) return { success: false, error: 'Electron API not available' };
+    try {
+      return await window.electronAPI.server.getServerUsage(serverName);
+    } catch (error: any) {
+      return { success: false, error: error.message };
+    }
+  }, []);
+
+  const getAllServersUsage = useCallback(async () => {
+    if (!window.electronAPI) return { success: false, error: 'Electron API not available' };
+    try {
+      return await window.electronAPI.server.getAllServersUsage();
+    } catch (error: any) {
+      return { success: false, error: error.message };
+    }
+  }, []);
+
+  const getServersDiskUsage = useCallback(async () => {
+    if (!window.electronAPI) return { success: false, error: 'Electron API not available' };
+    try {
+      return await window.electronAPI.server.getServersDiskUsage();
+    } catch (error: any) {
+      return { success: false, error: error.message };
+    }
+  }, []);
+
   useEffect(() => {
     checkJava();
     loadServers();
@@ -234,6 +279,10 @@ export function useServerManager() {
     getPlayerCount,
     updateServerRAM,
     sendCommand,
+    deleteServer,
+    getServerUsage,
+    getAllServersUsage,
+    getServersDiskUsage,
     refreshServers: loadServers,
   };
 }
