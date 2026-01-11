@@ -29,6 +29,10 @@ HexNode is a local-first Minecraft server management system. It provides a deskt
 
 This project is still in active development. Check back later for installation and usage instructions.
 
+## Website
+
+🌐 Live Website: [https://404twillCODE.github.io/Hexnode/](https://404twillCODE.github.io/Hexnode/)
+
 ## Repository
 
 GitHub: [https://github.com/404twillCODE/Hexnode](https://github.com/404twillCODE/Hexnode)

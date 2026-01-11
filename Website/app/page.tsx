@@ -17,10 +17,12 @@ function AnimatedSection({
   children,
   className,
   bootComplete,
+  id,
 }: {
   children: React.ReactNode;
   className?: string;
   bootComplete?: boolean;
+  id?: string;
 }) {
   const ref = useRef(null);
   const isInView = useInView(ref, { once: true, margin: "-100px" });
@@ -28,6 +30,7 @@ function AnimatedSection({
   return (
     <motion.div
       ref={ref}
+      id={id}
       initial="initial"
       animate={bootComplete && isInView ? "animate" : "initial"}
       variants={sectionVariants}

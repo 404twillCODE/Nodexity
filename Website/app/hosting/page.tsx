@@ -6,7 +6,7 @@ import { useRef } from "react";
 const fadeInUp = {
   initial: { opacity: 0, y: 20 },
   animate: { opacity: 1, y: 0 },
-  transition: { duration: 0.5, ease: [0.4, 0, 0.2, 1] },
+  transition: { duration: 0.5, ease: [0.4, 0, 0.2, 1] as any },
 };
 
 const sectionVariants = {
@@ -52,7 +52,7 @@ export default function HostingPage() {
           </motion.h1>
           <motion.p
             {...fadeInUp}
-            transition={{ delay: 0.1, duration: 0.5, ease: [0.4, 0, 0.2, 1] }}
+            transition={{ delay: 0.1, duration: 0.5, ease: [0.4, 0, 0.2, 1] as any }}
             className="mx-auto mt-6 max-w-2xl text-lg leading-relaxed text-text-secondary sm:text-xl"
           >
             Enterprise-grade hosting solutions designed for performance,
