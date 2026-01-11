@@ -1254,6 +1254,49 @@ async function createServer(serverName = 'default', serverType = 'paper', versio
 
 // Server process management
 const serverProcesses = new Map();
+// Track CPU usage over time for Windows (needed for accurate CPU percentage)
+const cpuUsageTracking = new Map(); // Map<serverName, { lastCpuTime: number, lastCheckTime: number }>
+
+// Check if a process is actually still running
+function isProcessAlive(process) {
+  if (!process || !process.pid) {
+    return false;
+  }
+  
+  // Check if process is marked as killed
+  if (process.killed) {
+    return false;
+  }
+  
+  try {
+    // On Windows, use tasklist to check if process exists
+    if (os.platform() === 'win32') {
+      try {
+        const result = execSync(`tasklist /FI "PID eq ${process.pid}" /FO CSV /NH`, {
+          encoding: 'utf8',
+          stdio: ['ignore', 'pipe', 'ignore'],
+          timeout: 2000
+        });
+        // If process exists, tasklist will return a line with the PID
+        return result.trim().includes(process.pid.toString());
+      } catch (error) {
+        // Process doesn't exist or error checking
+        return false;
+      }
+    } else {
+      // On Unix-like systems, use kill with signal 0
+      try {
+        process.kill(0); // Signal 0 doesn't kill, just checks if process exists
+        return true;
+      } catch (error) {
+        // Process doesn't exist (ESRCH error)
+        return false;
+      }
+    }
+  } catch (error) {
+    return false;
+  }
+}
 
 // Start server
 async function startServer(serverName, ramGB = null) {
@@ -1320,6 +1363,7 @@ async function startServer(serverName, ramGB = null) {
     // Handle process events
     javaProcess.on('exit', async (code) => {
       serverProcesses.delete(serverName);
+      cpuUsageTracking.delete(serverName); // Clean up CPU tracking
       const currentConfig = await getServerConfig(serverName);
       if (currentConfig) {
         await saveServerConfig(serverName, {
@@ -1331,6 +1375,7 @@ async function startServer(serverName, ramGB = null) {
 
     javaProcess.on('error', async (error) => {
       serverProcesses.delete(serverName);
+      cpuUsageTracking.delete(serverName); // Clean up CPU tracking
       const currentConfig = await getServerConfig(serverName);
       if (currentConfig) {
         await saveServerConfig(serverName, {
@@ -1392,6 +1437,7 @@ async function stopServer(serverName) {
       if (serverProcesses.has(serverName)) {
         process.kill();
         serverProcesses.delete(serverName);
+        cpuUsageTracking.delete(serverName); // Clean up CPU tracking
         const currentConfig = await getServerConfig(serverName);
         if (currentConfig) {
           await saveServerConfig(serverName, {
@@ -1460,29 +1506,58 @@ async function getServerUsage(serverName) {
   try {
     const process = serverProcesses.get(serverName);
     if (!process || !process.pid) {
+      // Clear tracking if process doesn't exist
+      cpuUsageTracking.delete(serverName);
       return { success: true, cpu: 0, ram: 0, ramMB: 0 };
     }
 
     const pid = process.pid;
     let cpuPercent = 0;
     let ramMB = 0;
+    const now = Date.now();
 
     if (os.platform() === 'win32') {
-      // Windows: Use PowerShell
+      // Windows: Use PowerShell with proper CPU calculation
       try {
-        const cmd = `powershell -Command "Get-Process -Id ${pid} -ErrorAction SilentlyContinue | Select-Object -Property CPU,WorkingSet | ConvertTo-Json"`;
-        const output = execSync(cmd, { encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'] });
-        const processInfo = JSON.parse(output);
+        // Get CPU time and RAM
+        const cmd = `powershell -Command "$proc = Get-Process -Id ${pid} -ErrorAction SilentlyContinue; if ($proc) { @{ CPU = $proc.CPU; WorkingSet = $proc.WorkingSet; ProcessorTime = $proc.TotalProcessorTime.TotalMilliseconds } | ConvertTo-Json }"`;
+        const output = execSync(cmd, { encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'], timeout: 5000 });
         
-        if (processInfo) {
-          ramMB = Math.round((processInfo.WorkingSet || 0) / (1024 * 1024));
-          cpuPercent = 0; // CPU is cumulative, would need tracking over time
+        if (output && output.trim()) {
+          const processInfo = JSON.parse(output);
+          
+          if (processInfo) {
+            ramMB = Math.round((processInfo.WorkingSet || 0) / (1024 * 1024));
+            
+            // Calculate CPU percentage based on time difference
+            const currentCpuTime = processInfo.ProcessorTime || 0;
+            const tracking = cpuUsageTracking.get(serverName);
+            
+            if (tracking && tracking.lastCheckTime) {
+              const timeDiff = (now - tracking.lastCheckTime) / 1000; // Convert to seconds
+              const cpuTimeDiff = (currentCpuTime - tracking.lastCpuTime) / 1000; // Convert to seconds
+              
+              if (timeDiff > 0) {
+                // CPU percentage = (CPU time difference / time difference) * 100
+                // Divide by number of CPU cores to get percentage per core, then multiply by 100
+                const cpuCores = os.cpus().length;
+                cpuPercent = Math.min(100, (cpuTimeDiff / timeDiff / cpuCores) * 100);
+                cpuPercent = Math.max(0, cpuPercent); // Ensure non-negative
+              }
+            }
+            
+            // Update tracking
+            cpuUsageTracking.set(serverName, {
+              lastCpuTime: currentCpuTime,
+              lastCheckTime: now
+            });
+          }
         }
       } catch (error) {
-        // Fallback: try wmic
+        // Fallback: try wmic for RAM only (CPU calculation requires tracking)
         try {
           const wmicCmd = `wmic process where ProcessId=${pid} get WorkingSetSize /format:csv`;
-          const wmicOutput = execSync(wmicCmd, { encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'] });
+          const wmicOutput = execSync(wmicCmd, { encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'], timeout: 5000 });
           const lines = wmicOutput.split('\n').filter(l => l.trim() && !l.startsWith('Node'));
           if (lines.length > 0) {
             const values = lines[0].split(',');
@@ -1490,14 +1565,48 @@ async function getServerUsage(serverName) {
               ramMB = Math.round(parseInt(values[2] || 0) / (1024 * 1024));
             }
           }
+          
+          // Try to get CPU using wmic (cumulative CPU time)
+          try {
+            const cpuCmd = `wmic process where ProcessId=${pid} get KernelModeTime,UserModeTime /format:csv`;
+            const cpuOutput = execSync(cpuCmd, { encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'], timeout: 5000 });
+            const cpuLines = cpuOutput.split('\n').filter(l => l.trim() && !l.startsWith('Node'));
+            if (cpuLines.length > 0) {
+              const cpuValues = cpuLines[0].split(',');
+              if (cpuValues.length >= 3) {
+                const kernelTime = parseInt(cpuValues[1] || 0);
+                const userTime = parseInt(cpuValues[2] || 0);
+                const totalCpuTime = (kernelTime + userTime) / 10000; // Convert 100-nanosecond intervals to milliseconds
+                
+                const tracking = cpuUsageTracking.get(serverName);
+                if (tracking && tracking.lastCheckTime) {
+                  const timeDiff = (now - tracking.lastCheckTime) / 1000;
+                  const cpuTimeDiff = (totalCpuTime - tracking.lastCpuTime) / 1000;
+                  
+                  if (timeDiff > 0) {
+                    const cpuCores = os.cpus().length;
+                    cpuPercent = Math.min(100, (cpuTimeDiff / timeDiff / cpuCores) * 100);
+                    cpuPercent = Math.max(0, cpuPercent);
+                  }
+                }
+                
+                cpuUsageTracking.set(serverName, {
+                  lastCpuTime: totalCpuTime,
+                  lastCheckTime: now
+                });
+              }
+            }
+          } catch (cpuError) {
+            // CPU calculation failed, but we have RAM
+          }
         } catch (wmicError) {
           // If both fail, return 0
         }
       }
     } else {
-      // Linux/macOS: Use ps
+      // Linux/macOS: Use ps (gives CPU percentage directly)
       try {
-        const psOutput = execSync(`ps -p ${pid} -o %cpu,rss --no-headers`, { encoding: 'utf8' });
+        const psOutput = execSync(`ps -p ${pid} -o %cpu,rss --no-headers`, { encoding: 'utf8', timeout: 5000 });
         const parts = psOutput.trim().split(/\s+/);
         if (parts.length >= 2) {
           cpuPercent = parseFloat(parts[0]) || 0;
@@ -1629,6 +1738,7 @@ async function killServer(serverName) {
     // Force kill immediately
     process.kill('SIGKILL');
     serverProcesses.delete(serverName);
+    cpuUsageTracking.delete(serverName); // Clean up CPU tracking
 
     // Update status
     const config = await getServerConfig(serverName);
@@ -1744,15 +1854,34 @@ async function listServers() {
           let status = 'STOPPED';
           if (isRunning) {
             const process = serverProcesses.get(serverName);
-            if (process && !process.killed && process.pid) {
+            if (process && isProcessAlive(process)) {
               status = 'RUNNING';
             } else {
+              // Process is dead, remove it and update config
+              serverProcesses.delete(serverName);
+              cpuUsageTracking.delete(serverName);
               status = 'STOPPED';
+              // Update config to reflect actual status
+              if (config) {
+                await saveServerConfig(serverName, {
+                  ...config,
+                  status: 'STOPPED'
+                });
+              }
             }
           } else if (config && config.status === 'STARTING') {
             status = 'STARTING';
           } else if (config) {
             status = config.status || 'STOPPED';
+          }
+          
+          // If config says RUNNING but process doesn't exist, fix it
+          if (config && config.status === 'RUNNING' && !isRunning) {
+            status = 'STOPPED';
+            await saveServerConfig(serverName, {
+              ...config,
+              status: 'STOPPED'
+            });
           }
           
           // Extract version from jar filename if not in config
