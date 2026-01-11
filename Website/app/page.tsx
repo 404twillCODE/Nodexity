@@ -768,7 +768,7 @@ export default function Home() {
               >
                 Environmental responsibility through recycled hardware. Recycle Host repurposes
                 enterprise PCs, reducing electronic waste while delivering reliable hosting.
-                Sustainable infrastructure that doesn't compromise on performance or reliability.
+                Sustainable infrastructure that doesn&apos;t compromise on performance or reliability.
               </motion.p>
           </div>
           <motion.div

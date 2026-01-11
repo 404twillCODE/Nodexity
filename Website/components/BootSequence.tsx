@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 
 interface BootLine {
@@ -104,13 +104,13 @@ export default function BootSequence({ onComplete }: BootSequenceProps) {
     };
   }, [onComplete]);
 
-  const handleSkip = () => {
+  const handleSkip = useCallback(() => {
     setIsSkipped(true);
     setIsComplete(true);
     if (onComplete) {
       onComplete();
     }
-  };
+  }, [onComplete]);
 
   useEffect(() => {
     const handleKeyPress = (e: KeyboardEvent) => {
@@ -121,7 +121,7 @@ export default function BootSequence({ onComplete }: BootSequenceProps) {
 
     window.addEventListener("keydown", handleKeyPress);
     return () => window.removeEventListener("keydown", handleKeyPress);
-  }, [isVisible, isComplete]);
+  }, [isVisible, isComplete, handleSkip]);
 
   if (!isVisible) return null;
 
