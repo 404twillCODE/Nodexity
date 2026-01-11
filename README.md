@@ -35,28 +35,6 @@ This project is still in active development. Check back later for installation a
 
 > **Note:** The website is also in active development and may have incomplete features or styling issues.
 
-### Deploying to GitHub Pages
-
-The website is automatically deployed to GitHub Pages using GitHub Actions. To enable automatic deployment:
-
-1. **Enable GitHub Pages in repository settings:**
-   - Go to your repository on GitHub
-   - Navigate to **Settings** → **Pages**
-   - Under "Source", select **GitHub Actions**
-   - Save the settings
-
-2. **Push the workflow file:**
-   - The GitHub Actions workflow (`.github/workflows/deploy-pages.yml`) is already set up
-   - Push your changes to the `main` branch
-   - The workflow will automatically build and deploy the website
-
-3. **Manual deployment (alternative):**
-   ```bash
-   cd Website
-   npm run build:gh-pages
-   # Then push the 'out' directory contents to a 'gh-pages' branch
-   ```
-
 ## Repository
 
 GitHub: [https://github.com/404twillCODE/Hexnode](https://github.com/404twillCODE/Hexnode)
