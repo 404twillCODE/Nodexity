@@ -1,0 +1,3 @@
+App/release/win-unpacked/HexNode.exe
+App/release/HexNode-win32-x64/HexNode.exe
+
