@@ -34,7 +34,7 @@ export function SystemFooter() {
       <div className="mx-auto max-w-7xl px-4 py-3 sm:px-6 lg:px-8">
         <div className="flex items-center justify-center">
           <span className="text-xs text-text-muted">
-            © 2024 HexNode
+            © 2026 HexNode
           </span>
         </div>
       </div>

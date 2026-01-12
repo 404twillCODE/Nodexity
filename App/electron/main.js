@@ -326,19 +326,33 @@ app.whenReady().then(() => {
   });
 });
 
-app.on('window-all-closed', () => {
-  // Stop all servers before quitting
-  const { listServers, stopServer } = serverManager;
-  listServers().then(servers => {
-    servers.forEach(server => {
-      if (server.status === 'RUNNING') {
-        stopServer(server.name);
-      }
-    });
-  });
+// Kill all servers before quitting
+async function killAllServers() {
+  try {
+    const servers = await serverManager.listServers();
+    const killPromises = servers
+      .filter(server => server.status === 'RUNNING' || server.status === 'STARTING')
+      .map(server => serverManager.killServer(server.name));
+    
+    // Kill all servers in parallel and wait for completion
+    await Promise.allSettled(killPromises);
+  } catch (error) {
+    console.error('Error killing servers on shutdown:', error);
+  }
+}
+
+// Handle before-quit event (more reliable than window-all-closed)
+app.on('before-quit', async (event) => {
+  event.preventDefault(); // Prevent immediate quit
+  await killAllServers();
+  app.exit(0); // Force exit after killing servers
+});
+
+app.on('window-all-closed', async () => {
+  // Kill all servers before quitting
+  await killAllServers();
   
   if (process.platform !== 'darwin') {
     app.quit();
   }
 });
-
