@@ -590,6 +590,20 @@ export default function Home() {
                   </span>
                 </motion.div>
               </div>
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+                transition={{ delay: 0.4, type: "spring", stiffness: 100, damping: 25 }}
+                className="mt-8"
+              >
+                <Link
+                  href="/launcher"
+                  className="btn-secondary"
+                >
+                  <span className="relative z-20 font-mono">LEARN MORE</span>
+                </Link>
+              </motion.div>
             </div>
             <div className="order-2">
               <FloatingCard delay={0.5} bootComplete={bootComplete}>
@@ -850,6 +864,20 @@ export default function Home() {
                   </span>
                 </motion.div>
               </div>
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+                transition={{ delay: 0.4, type: "spring", stiffness: 100, damping: 25 }}
+                className="mt-8"
+              >
+                <Link
+                  href="/hosting"
+                  className="btn-secondary"
+                >
+                  <span className="relative z-20 font-mono">LEARN MORE</span>
+                </Link>
+              </motion.div>
             </div>
             <div className="order-2">
               <FloatingCard delay={0.5} bootComplete={bootComplete}>
