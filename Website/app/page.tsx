@@ -338,7 +338,7 @@ export default function Home() {
       {bootComplete && (
         <motion.div
           style={{ opacity: dividerOpacity }}
-          className="full-width-section relative h-px overflow-hidden bg-background"
+          className="full-width-section relative h-1 overflow-hidden bg-background"
         >
           <motion.div
             initial={{ scaleX: 0 }}
@@ -349,7 +349,7 @@ export default function Home() {
               stiffness: 50,
               damping: 20,
             }}
-            className="h-full origin-left bg-gradient-to-r from-transparent via-accent/20 to-transparent"
+            className="h-full origin-left block-divider"
           />
         </motion.div>
       )}

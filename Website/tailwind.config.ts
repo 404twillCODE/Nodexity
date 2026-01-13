@@ -26,6 +26,12 @@ const config: Config = {
           DEFAULT: "#1a1a1a",
           hover: "#2a2a2a",
         },
+        minecraft: {
+          stone: "#8B8B8B",
+          grass: "#7CB342",
+          dirt: "#8B6F47",
+          wood: "#8B4513",
+        },
       },
       fontFamily: {
         sans: ["var(--font-inter)", "system-ui", "sans-serif"],
