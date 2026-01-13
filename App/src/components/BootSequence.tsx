@@ -45,18 +45,10 @@ function TypingText({ text, startTyping }: { text: string; startTyping: boolean 
   if (!startTyping) return null;
 
   return (
-    <span>
+    <span className="terminal-text">
       {displayedText}
       {!isComplete && (
-        <motion.span
-          animate={{ opacity: [1, 0] }}
-          transition={{
-            duration: 0.8,
-            repeat: Infinity,
-            repeatType: "reverse",
-          }}
-          className="inline-block w-2 h-4 bg-accent ml-0.5 align-middle"
-        />
+        <span className="terminal-cursor">█</span>
       )}
     </span>
   );
@@ -133,34 +125,44 @@ export default function BootSequence({ onComplete }: BootSequenceProps) {
           className="fixed inset-0 z-50 flex items-center justify-center bg-background"
           onClick={handleSkip}
         >
-          <div className="font-mono text-sm text-text-secondary">
-            <div className="space-y-0.5">
-              {visibleLines.map((line, index) => (
+          <div className="terminal-loader">
+            <div className="terminal-header">
+              <div className="terminal-title">HexNode</div>
+              <div className="terminal-controls">
+                <div className="control close"></div>
+                <div className="control minimize"></div>
+                <div className="control maximize"></div>
+              </div>
+            </div>
+            <div className="terminal-content">
+              <div className="space-y-0.5">
+                {visibleLines.map((line, index) => (
+                  <motion.div
+                    key={index}
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    transition={{ duration: 0.2, ease: "easeOut" }}
+                    className="whitespace-pre terminal-line"
+                  >
+                    {index === visibleLines.length - 1 && !isSkipped ? (
+                      <TypingText text={line.text} startTyping={currentLineIndex === index + 1} />
+                    ) : (
+                      line.text
+                    )}
+                  </motion.div>
+                ))}
+              </div>
+              {!isSkipped && (
                 <motion.div
-                  key={index}
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
-                  transition={{ duration: 0.2, ease: "easeOut" }}
-                  className="whitespace-pre"
+                  transition={{ delay: 1.2 }}
+                  className="mt-4 text-[10px] uppercase tracking-wider terminal-skip"
                 >
-                  {index === visibleLines.length - 1 && !isSkipped ? (
-                    <TypingText text={line.text} startTyping={currentLineIndex === index + 1} />
-                  ) : (
-                    line.text
-                  )}
+                  Press any key or click to skip
                 </motion.div>
-              ))}
+              )}
             </div>
-            {!isSkipped && (
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ delay: 1.2 }}
-                className="mt-6 text-[10px] uppercase tracking-wider text-text-muted"
-              >
-                Press any key or click to skip
-              </motion.div>
-            )}
           </div>
         </motion.div>
       )}

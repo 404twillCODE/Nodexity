@@ -328,6 +328,114 @@
       rgba(139, 139, 139, 0.1) 4px
     );
   }
+
+  /* Terminal Loader Styles */
+  .terminal-loader {
+    border: 2px solid rgba(139, 139, 139, 0.3);
+    background-color: #0a0a0a;
+    color: #2EF2A2;
+    font-family: "Courier New", Courier, monospace;
+    font-size: 0.875rem;
+    padding: 0;
+    width: 28rem;
+    max-width: 90vw;
+    box-shadow: 
+      0 4px 8px rgba(0, 0, 0, 0.4),
+      inset 0 0 0 1px rgba(139, 139, 139, 0.1);
+    position: relative;
+    overflow: hidden;
+    box-sizing: border-box;
+    image-rendering: pixelated;
+  }
+
+  .terminal-header {
+    position: relative;
+    height: 1.75rem;
+    background-color: #1a1a1a;
+    border-bottom: 2px solid rgba(139, 139, 139, 0.2);
+    padding: 0 0.75rem;
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    box-shadow: inset 0 1px 0 rgba(139, 139, 139, 0.1);
+  }
+
+  .terminal-controls {
+    display: flex;
+    gap: 0.5rem;
+  }
+
+  .control {
+    display: inline-block;
+    width: 0.75rem;
+    height: 0.75rem;
+    border: 1px solid rgba(139, 139, 139, 0.3);
+    box-shadow: inset 0 1px 0 rgba(0, 0, 0, 0.3);
+    image-rendering: pixelated;
+  }
+
+  .control.close {
+    background-color: #e33;
+    border-color: #c22;
+  }
+
+  .control.minimize {
+    background-color: #ee0;
+    border-color: #cc0;
+  }
+
+  .control.maximize {
+    background-color: #0b0;
+    border-color: #0a0;
+  }
+
+  .terminal-title {
+    line-height: 1.75rem;
+    color: #a0a0a0;
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+  }
+
+  .terminal-content {
+    padding: 1rem 1.25rem;
+    min-height: 8rem;
+  }
+
+  .terminal-line {
+    color: #2EF2A2;
+    font-size: 0.875rem;
+    line-height: 1.5;
+  }
+
+  .terminal-text {
+    color: #2EF2A2;
+  }
+
+  .terminal-cursor {
+    display: inline-block;
+    background-color: #2EF2A2;
+    width: 0.5rem;
+    height: 1rem;
+    margin-left: 0.125rem;
+    animation: blinkCursor 1s step-end infinite;
+    vertical-align: middle;
+  }
+
+  .terminal-skip {
+    color: rgba(160, 160, 160, 0.6);
+  }
+
+  @keyframes blinkCursor {
+    0%, 49% {
+      opacity: 1;
+    }
+    50%, 100% {
+      opacity: 0;
+    }
+  }
 }
 
 @layer utilities {
