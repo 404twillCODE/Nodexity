@@ -1,0 +1,269 @@
+/* Minecraft-themed Card Styles */
+
+.cardContainer {
+  width: 100%;
+  max-width: 400px;
+  height: 250px;
+  margin: 0 auto;
+}
+
+.cardFrontMinecraft {
+  width: 100%;
+  height: 100%;
+  border: 2px solid rgba(139, 139, 139, 0.3);
+  background: linear-gradient(135deg, #1a1a1a 0%, #0a0a0a 100%);
+  box-shadow: 
+    inset 0 0 0 1px rgba(139, 139, 139, 0.1),
+    0 4px 8px rgba(0, 0, 0, 0.4),
+    0 0 0 1px rgba(46, 242, 162, 0.1);
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  image-rendering: pixelated;
+  position: relative;
+}
+
+.cardHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.chipMinecraft {
+  width: 3rem;
+  height: 2.5rem;
+  background: linear-gradient(135deg, #8B8B8B 0%, #666666 100%);
+  border: 2px solid rgba(139, 139, 139, 0.5);
+  position: relative;
+  box-shadow: 
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.3);
+  image-rendering: pixelated;
+}
+
+.chipMinecraft::before {
+  content: "";
+  position: absolute;
+  top: 0.5rem;
+  left: 0.5rem;
+  right: 0.5rem;
+  bottom: 0.5rem;
+  border: 1px solid rgba(0, 0, 0, 0.3);
+}
+
+.cardLogo {
+  padding: 0.5rem 1rem;
+  border: 2px solid rgba(46, 242, 162, 0.3);
+  font-size: 0.75rem;
+  font-weight: 700;
+  font-family: monospace;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #2EF2A2;
+  box-shadow: 
+    inset 0 1px 0 rgba(46, 242, 162, 0.2),
+    0 1px 2px rgba(0, 0, 0, 0.3);
+  image-rendering: pixelated;
+}
+
+.cardNumber {
+  font-size: 1.5rem;
+  font-weight: 600;
+  font-family: monospace;
+  letter-spacing: 0.15em;
+  color: #2EF2A2;
+  text-shadow: 0 0 10px rgba(46, 242, 162, 0.3);
+  margin: 1rem 0;
+}
+
+.cardNumberInput {
+  margin: 1rem 0;
+  cursor: text;
+}
+
+.cardInput {
+  width: 100%;
+  background: transparent;
+  border: none;
+  outline: none;
+  font-size: 1.5rem;
+  font-weight: 600;
+  font-family: monospace;
+  letter-spacing: 0.15em;
+  color: #2EF2A2;
+  text-shadow: 0 0 10px rgba(46, 242, 162, 0.3);
+  caret-color: #2EF2A2;
+}
+
+.cardInput::placeholder {
+  color: rgba(46, 242, 162, 0.3);
+  opacity: 0.6;
+}
+
+.cardFooter {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 1rem;
+}
+
+.cardExpiryInput {
+  cursor: text;
+}
+
+.cardLabel {
+  font-size: 0.5rem;
+  font-family: monospace;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: rgba(160, 160, 160, 0.6);
+  margin-bottom: 0.25rem;
+}
+
+.cardValue {
+  font-size: 0.875rem;
+  font-weight: 600;
+  font-family: monospace;
+  letter-spacing: 0.1em;
+  color: #2EF2A2;
+}
+
+.cardInputSmall {
+  width: 100%;
+  background: transparent;
+  border: none;
+  outline: none;
+  font-size: 0.875rem;
+  font-weight: 600;
+  font-family: monospace;
+  letter-spacing: 0.1em;
+  color: #2EF2A2;
+  caret-color: #2EF2A2;
+  min-width: 60px;
+}
+
+.cardInputSmall::placeholder {
+  color: rgba(46, 242, 162, 0.3);
+  opacity: 0.6;
+}
+
+.cardNameInput {
+  cursor: text;
+  max-width: 60%;
+  flex: 1;
+}
+
+.cardName {
+  font-size: 0.875rem;
+  font-weight: 600;
+  font-family: monospace;
+  letter-spacing: 0.1em;
+  color: #2EF2A2;
+  text-transform: uppercase;
+  max-width: 60%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cardInputName {
+  width: 100%;
+  background: transparent;
+  border: none;
+  outline: none;
+  font-size: 0.875rem;
+  font-weight: 600;
+  font-family: monospace;
+  letter-spacing: 0.1em;
+  color: #2EF2A2;
+  text-transform: uppercase;
+  caret-color: #2EF2A2;
+}
+
+.cardInputName::placeholder {
+  color: rgba(46, 242, 162, 0.3);
+  opacity: 0.6;
+  text-transform: uppercase;
+}
+
+.cardStrip {
+  position: absolute;
+  top: 2rem;
+  left: 0;
+  right: 0;
+  height: 3rem;
+  background: repeating-linear-gradient(
+    45deg,
+    #303030,
+    #303030 8px,
+    #202020 8px,
+    #202020 16px
+  );
+  border-top: 2px solid rgba(139, 139, 139, 0.2);
+  border-bottom: 2px solid rgba(139, 139, 139, 0.2);
+}
+
+.cardSignature {
+  position: absolute;
+  bottom: 3rem;
+  left: 1.5rem;
+  right: 1.5rem;
+  height: 2.5rem;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 1rem;
+  box-shadow: inset 0 1px 0 rgba(0, 0, 0, 0.3);
+}
+
+.cardCvvLabel {
+  font-size: 0.625rem;
+  font-family: monospace;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: rgba(160, 160, 160, 0.6);
+}
+
+.cardCvv {
+  font-size: 1rem;
+  font-weight: 600;
+  font-family: monospace;
+  letter-spacing: 0.2em;
+  color: #0a0a0a;
+  background: rgba(255, 255, 255, 0.9);
+  padding: 0.25rem 0.75rem;
+  border: 1px solid rgba(0, 0, 0, 0.2);
+  box-shadow: inset 0 1px 0 rgba(0, 0, 0, 0.2);
+}
+
+.cardSignature {
+  cursor: text;
+}
+
+.cardCvvInput {
+  cursor: text;
+  display: flex;
+  flex-direction: column;
+}
+
+.cardInputCvvFront {
+  width: 100%;
+  background: transparent;
+  border: none;
+  outline: none;
+  font-size: 0.875rem;
+  font-weight: 600;
+  font-family: monospace;
+  letter-spacing: 0.1em;
+  color: #2EF2A2;
+  caret-color: #2EF2A2;
+  min-width: 50px;
+  text-align: left;
+}
+
+.cardInputCvvFront::placeholder {
+  color: rgba(46, 242, 162, 0.3);
+  opacity: 0.6;
+}
