@@ -1,10 +1,31 @@
 "use client";
 
-import { motion, useInView, useScroll, useTransform, AnimatePresence } from "framer-motion";
-import { useRef, useState } from "react";
+import { motion, useInView, useScroll, useTransform, AnimatePresence, useAnimation } from "framer-motion";
+import { useRef, useState, useEffect } from "react";
 import Link from "next/link";
 import BootSequence from "@/components/BootSequence";
 import HexNodeTyping from "@/components/HexNodeTyping";
+
+// Hook to track scroll direction
+function useScrollDirection() {
+  const [scrollDirection, setScrollDirection] = useState<'up' | 'down'>('down');
+  const [lastScrollY, setLastScrollY] = useState(0);
+
+  useEffect(() => {
+    const updateScrollDirection = () => {
+      const scrollY = window.scrollY;
+      const direction = scrollY > lastScrollY ? 'down' : 'up';
+      if (direction !== scrollDirection && (scrollY - lastScrollY > 10 || scrollY - lastScrollY < -10)) {
+        setScrollDirection(direction);
+      }
+      setLastScrollY(scrollY > 0 ? scrollY : 0);
+    };
+    window.addEventListener('scroll', updateScrollDirection);
+    return () => window.removeEventListener('scroll', updateScrollDirection);
+  }, [scrollDirection, lastScrollY]);
+
+  return scrollDirection;
+}
 
 const sectionVariants = {
   initial: { opacity: 0, y: 50 },
@@ -19,14 +40,16 @@ function AnimatedSection({
   className,
   bootComplete,
   id,
+  scrollDirection = 'down',
 }: {
   children: React.ReactNode;
   className?: string;
   bootComplete?: boolean;
   id?: string;
+  scrollDirection?: 'up' | 'down';
 }) {
   const ref = useRef(null);
-  const isInView = useInView(ref, { once: true, margin: "-100px" });
+  const isInView = useInView(ref, { once: false, margin: "-100px" });
 
   return (
     <motion.div
@@ -40,6 +63,7 @@ function AnimatedSection({
         stiffness: 100,
         damping: 15,
         mass: 0.8,
+        delay: scrollDirection === 'up' ? 0.3 : 0,
       }}
       className={className}
     >
@@ -49,7 +73,7 @@ function AnimatedSection({
 }
 
 function FloatingCard({ children, delay = 0, bootComplete = false }: { children: React.ReactNode; delay?: number; bootComplete?: boolean }) {
-return <>{children}</>;
+  return <>{children}</>;
 }
 
 const allFeatures = [
@@ -80,8 +104,8 @@ function FeatureList() {
         <motion.div
           key={feature}
           initial={{ opacity: 0, x: -10 }}
-          whileInView={{ opacity: 1, x: 0 }}
-          viewport={{ once: true }}
+                whileInView={{ opacity: 1, x: 0 }}
+                viewport={{ once: false }}
           transition={{ delay: 0.1 + (index * 0.1), type: "spring", stiffness: 200, damping: 25 }}
           className="flex items-start gap-3"
         >
@@ -151,6 +175,15 @@ export default function Home() {
   const heroRef = useRef(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [bootComplete, setBootComplete] = useState(false);
+  const scrollDirection = useScrollDirection();
+
+  // Helper to reverse delay based on scroll direction
+  const getDelay = (baseDelay: number, maxDelay: number = 0.4) => {
+    if (scrollDirection === 'up') {
+      return maxDelay - baseDelay;
+    }
+    return baseDelay;
+  };
 
   const { scrollYProgress: containerScroll } = useScroll({
     target: containerRef,
@@ -240,35 +273,89 @@ export default function Home() {
               >
                 <motion.p
                   initial={{ opacity: 0, y: 20 }}
-                  animate={bootComplete ? { opacity: 1, y: 0 } : {}}
-                  transition={{ delay: 0.3, duration: 0.8, ease: [0.4, 0, 0.2, 1] }}
-                  className="text-base leading-relaxed text-text-secondary sm:text-lg lg:text-xl font-mono"
+                  animate={bootComplete ? { 
+                    opacity: 1,
+                  } : { opacity: 0, y: 20 }}
+                  transition={{ 
+                    delay: 0.3,
+                    duration: 0.8,
+                    ease: [0.4, 0, 0.2, 1]
+                  }}
+                  className="text-base leading-relaxed text-text-secondary sm:text-lg lg:text-xl font-mono relative"
                 >
-                  Local-first Minecraft server management system. Provides desktop
-                  application for server creation and management, and planned hosting
-                  infrastructure. All data remains local and portable by default.
+                  <motion.span
+                    animate={bootComplete ? {
+                      y: [0, -2, 0],
+                    } : { y: 0 }}
+                    transition={{
+                      duration: 4,
+                      repeat: Infinity,
+                      ease: "easeInOut",
+                      delay: 1.1
+                    }}
+                    className="block"
+                  >
+                    Local-first Minecraft server management system. Provides desktop
+                    application for server creation and management, and planned hosting
+                    infrastructure. All data remains local and portable by default.
+                  </motion.span>
                 </motion.p>
                 <motion.div
                   initial={{ opacity: 0, y: 20 }}
-                  animate={bootComplete ? { opacity: 1, y: 0 } : {}}
-                  transition={{ delay: 0.5, duration: 0.8, ease: [0.4, 0, 0.2, 1] }}
+                  animate={bootComplete ? { 
+                    opacity: 1, 
+                  } : { opacity: 0, y: 20 }}
+                  transition={{ 
+                    delay: 0.5,
+                    duration: 0.8,
+                    ease: [0.4, 0, 0.2, 1]
+                  }}
                   className="flex gap-4 justify-center border-t border-border pt-8"
                 >
-                  <a
-                    href="https://github.com/404twillCODE/Hexnode"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="btn-secondary block"
+                  <motion.div
+                    animate={bootComplete ? {
+                      y: [0, -2, 0],
+                    } : {}}
+                    transition={{
+                      duration: 4,
+                      repeat: Infinity,
+                      ease: "easeInOut",
+                      delay: 1.3
+                    }}
                   >
-                    <span className="relative z-20 font-mono">DOCUMENTATION</span>
-                  </a>
+                    <a
+                      href="https://github.com/404twillCODE/Hexnode"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="btn-secondary block"
+                    >
+                      <span className="relative z-20 font-mono">DOCUMENTATION</span>
+                    </a>
+                  </motion.div>
                 </motion.div>
                 <motion.div
                   initial={{ opacity: 0, y: 20 }}
-                  animate={bootComplete ? { opacity: 1, y: 0 } : {}}
-                  transition={{ delay: 0.7, duration: 0.8, ease: [0.4, 0, 0.2, 1] }}
+                  animate={bootComplete ? { 
+                    opacity: 1, 
+                  } : { opacity: 0, y: 20 }}
+                  transition={{ 
+                    delay: 0.7,
+                    duration: 0.8,
+                    ease: [0.4, 0, 0.2, 1]
+                  }}
                   className="grid grid-cols-2 gap-12 pt-8 border-t border-border"
                 >
+                  <motion.div
+                    animate={bootComplete ? {
+                      y: [0, -2, 0],
+                    } : {}}
+                    transition={{
+                      duration: 4,
+                      repeat: Infinity,
+                      ease: "easeInOut",
+                      delay: 1.5
+                    }}
+                  >
                     <div>
                       <div className="mb-3 text-xs font-mono uppercase tracking-wider text-text-muted">
                         In Development
@@ -329,7 +416,8 @@ export default function Home() {
                     </div>
                   </motion.div>
                 </motion.div>
-              </div>
+              </motion.div>
+            </div>
           )}
         </div>
       </section>
@@ -343,7 +431,7 @@ export default function Home() {
           <motion.div
             initial={{ scaleX: 0 }}
             whileInView={{ scaleX: 1 }}
-            viewport={{ once: true }}
+            viewport={{ once: false }}
             transition={{ 
               type: "spring",
               stiffness: 50,
@@ -355,7 +443,7 @@ export default function Home() {
       )}
 
       {/* Module: Server Manager */}
-      <AnimatedSection bootComplete={bootComplete} id="software-section" className="full-width-section relative bg-background-secondary">
+      <AnimatedSection bootComplete={bootComplete} scrollDirection={scrollDirection} id="software-section" className="full-width-section relative bg-background-secondary">
         <motion.div
           style={{ y: useTransform(containerScroll, [0, 1], ["0%", "12%"]) }}
           className="section-background depth-layer"
@@ -374,21 +462,23 @@ export default function Home() {
           />
         </motion.div>
         <div className="section-content mx-auto w-full max-w-7xl px-4 py-24 sm:px-6 lg:px-8 lg:py-32">
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-            transition={{ type: "spring", stiffness: 100, damping: 25 }}
-            className="mb-10"
-          >
-            <div className="flex items-center gap-4 mb-3">
-              <h2 className="text-3xl font-semibold tracking-tight text-text-primary sm:text-4xl lg:text-5xl font-mono">
-                SERVER MANAGER
-              </h2>
+          <div className="grid gap-12 lg:grid-cols-2 lg:items-center lg:gap-16">
+            <div className="order-1">
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: false }}
+                transition={{ type: "spring", stiffness: 100, damping: 25 }}
+                className="mb-10"
+              >
+                <div className="flex items-center gap-4 mb-3">
+                  <h2 className="text-3xl font-semibold tracking-tight text-text-primary sm:text-4xl lg:text-5xl font-mono">
+                    SERVER MANAGER
+                  </h2>
               <motion.span
                 initial={{ opacity: 0, scale: 0.8 }}
                 whileInView={{ opacity: 1, scale: 1 }}
-                viewport={{ once: true }}
+                viewport={{ once: false }}
                 transition={{ delay: 0.2, type: "spring", stiffness: 200, damping: 20 }}
                 className="inline-flex items-center gap-1.5 rounded-full border border-accent/40 bg-accent/15 px-3 py-1 text-xs font-mono uppercase tracking-wider text-accent"
               >
@@ -398,10 +488,8 @@ export default function Home() {
                 </span>
                 Development
               </motion.span>
-            </div>
-          </motion.div>
-          <div className="grid gap-12 lg:grid-cols-2 lg:items-center lg:gap-16">
-            <div className="order-1">
+                </div>
+              </motion.div>
               <p className="mb-6 text-base leading-relaxed text-text-secondary sm:text-lg">
                 Desktop application for creating and managing Minecraft servers.
                 Handles server lifecycle, world management, backups, and version
@@ -411,8 +499,8 @@ export default function Home() {
               <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true }}
-                transition={{ delay: 0.4, type: "spring", stiffness: 100, damping: 25 }}
+                viewport={{ once: false }}
+                transition={{ delay: getDelay(0.4, 0.4), type: "spring", stiffness: 100, damping: 25 }}
                 className="mt-8"
               >
                 <div className="flex flex-col items-start gap-3">
@@ -435,7 +523,7 @@ export default function Home() {
                   <motion.span
                     initial={{ opacity: 0 }}
                     whileInView={{ opacity: 1 }}
-                    viewport={{ once: true }}
+                    viewport={{ once: false }}
                     transition={{ delay: 0.5, duration: 0.5 }}
                     className="text-xs font-mono uppercase tracking-wider text-text-muted flex items-center gap-1.5"
                   >
@@ -463,47 +551,76 @@ export default function Home() {
               <FloatingCard delay={0.5} bootComplete={bootComplete}>
                 <motion.div
                   whileHover={{ y: -4 }}
-                  transition={{ type: "spring", stiffness: 300, damping: 25 }}
+                  animate={bootComplete ? {
+                    y: [0, -3, 0],
+                  } : { y: 0 }}
+                  transition={{
+                    duration: 4,
+                    repeat: Infinity,
+                    ease: "easeInOut",
+                    delay: 0.5
+                  }}
                   className="system-card p-6 opacity-60 w-full"
                 >
                   <div className="card-content space-y-4">
-                    {/* Game Icon/Thumbnail */}
-                    <div className="flex items-center gap-4">
-                      <div className="h-16 w-16 bg-gradient-to-br from-accent/20 to-accent/5 rounded-lg border border-accent/20 flex items-center justify-center">
-                        <svg className="w-8 h-8 text-accent/50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                        </svg>
+                    {/* Server Header */}
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="h-10 w-10 bg-gradient-to-br from-accent/20 to-accent/5 rounded border border-accent/20 flex items-center justify-center">
+                          <svg className="w-5 h-5 text-accent/50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                          </svg>
+                        </div>
+                        <div className="space-y-1">
+                          <div className="h-3.5 w-28 bg-text-primary/20 rounded"></div>
+                          <div className="h-2.5 w-20 bg-text-muted/30 rounded"></div>
+                        </div>
                       </div>
-                      <div className="flex-1 space-y-1">
-                        <div className="h-4 w-24 bg-text-primary/20 rounded"></div>
-                        <div className="h-3 w-16 bg-text-muted/30 rounded"></div>
+                      <div className="h-6 w-16 bg-accent/30 rounded-full flex items-center justify-center">
+                        <div className="h-2 w-2 bg-accent rounded-full"></div>
                       </div>
                     </div>
                     
-                    {/* Profile Selector */}
+                    {/* Server Stats */}
+                    <div className="grid grid-cols-2 gap-2 border-t border-border pt-3">
+                      <div className="space-y-1">
+                        <div className="text-[10px] font-mono text-text-muted uppercase">Version</div>
+                        <div className="h-3 w-16 bg-text-primary/15 rounded"></div>
+                      </div>
+                      <div className="space-y-1">
+                        <div className="text-[10px] font-mono text-text-muted uppercase">Players</div>
+                        <div className="h-3 w-12 bg-accent/20 rounded"></div>
+                      </div>
+                      <div className="space-y-1">
+                        <div className="text-[10px] font-mono text-text-muted uppercase">CPU</div>
+                        <div className="h-3 w-14 bg-accent/15 rounded"></div>
+                      </div>
+                      <div className="space-y-1">
+                        <div className="text-[10px] font-mono text-text-muted uppercase">RAM</div>
+                        <div className="h-3 w-14 bg-text-primary/15 rounded"></div>
+                      </div>
+                    </div>
+                    
+                    {/* Console Preview */}
                     <div className="border-t border-border pt-3">
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-xs font-mono text-text-muted uppercase tracking-wider">Status</span>
-                        <div className="h-3 w-12 bg-border/50 rounded-full"></div>
+                      <div className="text-[10px] font-mono text-text-muted uppercase mb-2">Console</div>
+                      <div className="bg-background-secondary/50 rounded border border-border/50 p-2 space-y-1">
+                        <div className="h-2 w-full bg-text-primary/10 rounded"></div>
+                        <div className="h-2 w-3/4 bg-text-primary/10 rounded"></div>
+                        <div className="h-2 w-5/6 bg-accent/20 rounded"></div>
                       </div>
                     </div>
                     
-                    {/* Version Info */}
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between text-xs font-mono">
-                        <span className="text-text-muted">Version:</span>
-                        <div className="h-3 w-20 bg-text-primary/15 rounded"></div>
+                    {/* Control Buttons */}
+                    <div className="flex gap-2 border-t border-border pt-3">
+                      <div className="h-8 flex-1 bg-accent/20 border border-accent/30 rounded flex items-center justify-center">
+                        <div className="h-3 w-10 bg-accent/40 rounded"></div>
                       </div>
-                      <div className="flex items-center justify-between text-xs font-mono">
-                        <span className="text-text-muted">Players:</span>
-                        <div className="h-3 w-16 bg-accent/20 rounded"></div>
-                      </div>
-                    </div>
-                    
-                    {/* Play Button */}
-                    <div className="pt-2 border-t border-border">
-                      <div className="h-10 w-full bg-accent/20 border border-accent/30 rounded flex items-center justify-center">
-                        <div className="h-4 w-16 bg-accent/40 rounded"></div>
+                      <div className="h-8 w-8 bg-border/50 rounded flex items-center justify-center">
+                        <svg className="w-4 h-4 text-text-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                        </svg>
                       </div>
                     </div>
                   </div>
@@ -515,7 +632,7 @@ export default function Home() {
       </AnimatedSection>
 
       {/* Module: Launcher */}
-      <AnimatedSection bootComplete={bootComplete} className="full-width-section relative">
+      <AnimatedSection bootComplete={bootComplete} scrollDirection={scrollDirection} className="full-width-section relative">
         <motion.div
           style={{ y: useTransform(containerScroll, [0, 1], ["0%", "12%"]) }}
           className="section-background depth-layer"
@@ -539,45 +656,65 @@ export default function Home() {
               <FloatingCard delay={0.5} bootComplete={bootComplete}>
                 <motion.div
                   whileHover={{ y: -4 }}
-                  transition={{ type: "spring", stiffness: 300, damping: 25 }}
+                  animate={{
+                    y: [0, -3, 0],
+                  }}
+                  transition={{
+                    duration: 4,
+                    repeat: Infinity,
+                    ease: "easeInOut",
+                    delay: 0.5
+                  }}
                   className="system-card p-6 opacity-60"
                 >
                   <div className="card-content space-y-4">
-                    {/* Game Icon/Thumbnail */}
-                    <div className="flex items-center gap-4">
-                      <div className="h-16 w-16 bg-gradient-to-br from-accent/20 to-accent/5 rounded-lg border border-accent/20 flex items-center justify-center">
-                        <div className="h-8 w-8 bg-accent/30 rounded"></div>
-                      </div>
-                      <div className="flex-1 space-y-1">
-                        <div className="h-4 w-24 bg-text-primary/20 rounded"></div>
-                        <div className="h-3 w-16 bg-text-muted/30 rounded"></div>
+                    {/* Game Header */}
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="h-12 w-12 bg-gradient-to-br from-accent/20 to-accent/5 rounded-lg border border-accent/20 flex items-center justify-center">
+                          <svg className="w-6 h-6 text-accent/50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                        </div>
+                        <div className="space-y-1">
+                          <div className="h-3.5 w-32 bg-text-primary/20 rounded"></div>
+                          <div className="h-2.5 w-24 bg-text-muted/30 rounded"></div>
+                        </div>
                       </div>
                     </div>
                     
-                    {/* Profile Selector */}
+                    {/* Profile & Version */}
+                    <div className="grid grid-cols-2 gap-3 border-t border-border pt-3">
+                      <div className="space-y-1">
+                        <div className="text-[10px] font-mono text-text-muted uppercase">Profile</div>
+                        <div className="h-3 w-20 bg-border/50 rounded"></div>
+                      </div>
+                      <div className="space-y-1">
+                        <div className="text-[10px] font-mono text-text-muted uppercase">Version</div>
+                        <div className="h-3 w-16 bg-text-primary/15 rounded"></div>
+                      </div>
+                    </div>
+                    
+                    {/* Mods List */}
                     <div className="border-t border-border pt-3">
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-xs font-mono text-text-muted uppercase tracking-wider">Profile</span>
-                        <div className="h-3 w-12 bg-border/50 rounded-full"></div>
-                      </div>
-                    </div>
-                    
-                    {/* Version Info */}
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between text-xs font-mono">
-                        <span className="text-text-muted">Version:</span>
-                        <div className="h-3 w-20 bg-text-primary/15 rounded"></div>
-                      </div>
-                      <div className="flex items-center justify-between text-xs font-mono">
-                        <span className="text-text-muted">Mods:</span>
-                        <div className="h-3 w-16 bg-accent/20 rounded"></div>
+                      <div className="text-[10px] font-mono text-text-muted uppercase mb-2">Mods</div>
+                      <div className="space-y-1.5">
+                        <div className="h-2.5 w-full bg-accent/15 rounded"></div>
+                        <div className="h-2.5 w-4/5 bg-accent/10 rounded"></div>
+                        <div className="h-2.5 w-3/4 bg-text-primary/10 rounded"></div>
                       </div>
                     </div>
                     
                     {/* Play Button */}
                     <div className="pt-2 border-t border-border">
                       <div className="h-10 w-full bg-accent/20 border border-accent/30 rounded flex items-center justify-center">
-                        <div className="h-4 w-16 bg-accent/40 rounded"></div>
+                        <div className="flex items-center gap-2">
+                          <svg className="w-4 h-4 text-accent/60" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                          </svg>
+                          <div className="h-3 w-16 bg-accent/40 rounded"></div>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -588,7 +725,7 @@ export default function Home() {
               <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true }}
+                viewport={{ once: false }}
                 transition={{ type: "spring", stiffness: 100, damping: 25 }}
                 className="mb-10"
               >
@@ -599,8 +736,8 @@ export default function Home() {
                   <motion.span
                     initial={{ opacity: 0, scale: 0.8 }}
                     whileInView={{ opacity: 1, scale: 1 }}
-                    viewport={{ once: true }}
-                    transition={{ delay: 0.2, type: "spring", stiffness: 200, damping: 20 }}
+                    viewport={{ once: false }}
+                    transition={{ delay: getDelay(0.2, 0.2), type: "spring", stiffness: 200, damping: 20 }}
                     className="inline-flex items-center gap-1.5 rounded-full border border-accent/40 bg-accent/15 px-3 py-1 text-xs font-mono uppercase tracking-wider text-accent"
                   >
                     <span className="relative flex h-1.5 w-1.5">
@@ -619,9 +756,9 @@ export default function Home() {
               <div className="space-y-3 border-t border-border pt-6">
                 <motion.div
                   initial={{ opacity: 0, x: -10 }}
-                  whileInView={{ opacity: 1, x: 0 }}
-                  viewport={{ once: true }}
-                  transition={{ delay: 0.1, type: "spring", stiffness: 200, damping: 25 }}
+                whileInView={{ opacity: 1, x: 0 }}
+                viewport={{ once: false }}
+                  transition={{ delay: getDelay(0.1, 0.3), type: "spring", stiffness: 200, damping: 25 }}
                   className="flex items-start gap-3"
                 >
                   <span className="mt-0.5 text-text-muted">→</span>
@@ -631,9 +768,9 @@ export default function Home() {
                 </motion.div>
                 <motion.div
                   initial={{ opacity: 0, x: -10 }}
-                  whileInView={{ opacity: 1, x: 0 }}
-                  viewport={{ once: true }}
-                  transition={{ delay: 0.2, type: "spring", stiffness: 200, damping: 25 }}
+                whileInView={{ opacity: 1, x: 0 }}
+                viewport={{ once: false }}
+                  transition={{ delay: getDelay(0.2, 0.3), type: "spring", stiffness: 200, damping: 25 }}
                   className="flex items-start gap-3"
                 >
                   <span className="mt-0.5 text-text-muted">→</span>
@@ -644,8 +781,8 @@ export default function Home() {
                 <motion.div
                   initial={{ opacity: 0, x: -10 }}
                   whileInView={{ opacity: 1, x: 0 }}
-                  viewport={{ once: true }}
-                  transition={{ delay: 0.3, type: "spring", stiffness: 200, damping: 25 }}
+                  viewport={{ once: false }}
+                  transition={{ delay: getDelay(0.3, 0.3), type: "spring", stiffness: 200, damping: 25 }}
                   className="flex items-start gap-3"
                 >
                   <span className="mt-0.5 text-text-muted">→</span>
@@ -657,8 +794,8 @@ export default function Home() {
               <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true }}
-                transition={{ delay: 0.4, type: "spring", stiffness: 100, damping: 25 }}
+                viewport={{ once: false }}
+                transition={{ delay: getDelay(0.4, 0.4), type: "spring", stiffness: 100, damping: 25 }}
                 className="mt-8"
               >
                 <Link
@@ -674,14 +811,14 @@ export default function Home() {
       </AnimatedSection>
 
       {/* Module: Recycle Hosting */}
-      <AnimatedSection bootComplete={bootComplete} className="full-width-section relative bg-background-secondary">
+      <AnimatedSection bootComplete={bootComplete} scrollDirection={scrollDirection} className="full-width-section relative bg-background-secondary">
         <div className="section-content mx-auto w-full max-w-7xl px-4 py-24 sm:px-6 lg:px-8 lg:py-32">
           <div className="grid gap-12 lg:grid-cols-2 lg:items-center lg:gap-16">
             <div className="order-1">
               <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true }}
+                viewport={{ once: false }}
                 transition={{ type: "spring", stiffness: 100, damping: 25 }}
                 className="mb-10"
               >
@@ -692,8 +829,8 @@ export default function Home() {
                   <motion.span
                     initial={{ opacity: 0, scale: 0.8 }}
                     whileInView={{ opacity: 1, scale: 1 }}
-                    viewport={{ once: true }}
-                    transition={{ delay: 0.2, type: "spring", stiffness: 200, damping: 20 }}
+                    viewport={{ once: false }}
+                    transition={{ delay: getDelay(0.2, 0.2), type: "spring", stiffness: 200, damping: 20 }}
                     className="inline-flex items-center gap-1.5 rounded-full border border-accent/40 bg-accent/15 px-3 py-1 text-xs font-mono uppercase tracking-wider text-accent"
                   >
                     <span className="relative flex h-1.5 w-1.5">
@@ -712,9 +849,9 @@ export default function Home() {
               <div className="space-y-3 border-t border-border pt-6">
                 <motion.div
                   initial={{ opacity: 0, x: -10 }}
-                  whileInView={{ opacity: 1, x: 0 }}
-                  viewport={{ once: true }}
-                  transition={{ delay: 0.1, type: "spring", stiffness: 200, damping: 25 }}
+                whileInView={{ opacity: 1, x: 0 }}
+                viewport={{ once: false }}
+                  transition={{ delay: getDelay(0.1, 0.3), type: "spring", stiffness: 200, damping: 25 }}
                   className="flex items-start gap-3"
                 >
                   <span className="mt-0.5 text-text-muted">→</span>
@@ -724,9 +861,9 @@ export default function Home() {
                 </motion.div>
                 <motion.div
                   initial={{ opacity: 0, x: -10 }}
-                  whileInView={{ opacity: 1, x: 0 }}
-                  viewport={{ once: true }}
-                  transition={{ delay: 0.2, type: "spring", stiffness: 200, damping: 25 }}
+                whileInView={{ opacity: 1, x: 0 }}
+                viewport={{ once: false }}
+                  transition={{ delay: getDelay(0.2, 0.3), type: "spring", stiffness: 200, damping: 25 }}
                   className="flex items-start gap-3"
                 >
                   <span className="mt-0.5 text-text-muted">→</span>
@@ -736,9 +873,9 @@ export default function Home() {
                 </motion.div>
                 <motion.div
                   initial={{ opacity: 0, x: -10 }}
-                  whileInView={{ opacity: 1, x: 0 }}
-                  viewport={{ once: true }}
-                  transition={{ delay: 0.3, type: "spring", stiffness: 200, damping: 25 }}
+                whileInView={{ opacity: 1, x: 0 }}
+                viewport={{ once: false }}
+                  transition={{ delay: getDelay(0.3, 0.3), type: "spring", stiffness: 200, damping: 25 }}
                   className="flex items-start gap-3"
                 >
                   <span className="mt-0.5 text-text-muted">→</span>
@@ -750,8 +887,8 @@ export default function Home() {
               <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true }}
-                transition={{ delay: 0.4, type: "spring", stiffness: 100, damping: 25 }}
+                viewport={{ once: false }}
+                transition={{ delay: getDelay(0.4, 0.4), type: "spring", stiffness: 100, damping: 25 }}
                 className="mt-8"
               >
                 <Link
@@ -766,33 +903,78 @@ export default function Home() {
               <FloatingCard delay={0.3} bootComplete={bootComplete}>
                 <motion.div
                   whileHover={{ y: -4 }}
-                  transition={{ type: "spring", stiffness: 300, damping: 25 }}
+                  animate={{
+                    y: [0, -3, 0],
+                  }}
+                  transition={{
+                    duration: 4,
+                    repeat: Infinity,
+                    ease: "easeInOut",
+                    delay: 0.3
+                  }}
                   className="system-card p-6 opacity-60 w-full"
                 >
                   <div className="card-content space-y-4">
-                    <div className="flex items-center gap-3">
-                      <div className="h-5 w-28 bg-text-primary/15 rounded"></div>
-                      <div className="h-4 w-20 bg-border/50 rounded-full"></div>
-                    </div>
-                    <div className="space-y-2">
-                      <div className="flex items-center gap-4 text-xs font-mono">
-                        <div className="flex items-center gap-1">
-                          <span className="text-text-muted">Region:</span>
-                          <span className="h-3 w-16 bg-text-primary/15 rounded"></span>
+                    {/* Hosting Header */}
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="h-10 w-10 bg-gradient-to-br from-accent/20 to-accent/5 rounded border border-accent/20 flex items-center justify-center">
+                          <svg className="w-5 h-5 text-accent/50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01" />
+                          </svg>
                         </div>
-                        <div className="flex items-center gap-1">
-                          <span className="text-text-muted">Status:</span>
-                          <span className="h-3 w-12 bg-border/50 rounded"></span>
+                        <div className="space-y-1">
+                          <div className="h-3.5 w-28 bg-text-primary/20 rounded"></div>
+                          <div className="h-2.5 w-20 bg-text-muted/30 rounded"></div>
                         </div>
                       </div>
-                      <div className="flex items-center gap-1 text-xs font-mono">
-                        <span className="text-text-muted">Resources:</span>
-                        <span className="h-3 w-20 bg-text-primary/15 rounded"></span>
+                      <div className="h-6 w-14 bg-accent/30 rounded-full flex items-center justify-center">
+                        <div className="h-2 w-2 bg-accent rounded-full"></div>
                       </div>
                     </div>
-                    <div className="mt-4 flex gap-2 border-t border-border pt-4">
-                      <div className="h-7 flex-1 bg-border/50 rounded"></div>
-                      <div className="h-7 flex-1 bg-border/50 rounded"></div>
+                    
+                    {/* Hosting Stats */}
+                    <div className="grid grid-cols-2 gap-3 border-t border-border pt-3">
+                      <div className="space-y-1">
+                        <div className="text-[10px] font-mono text-text-muted uppercase">Region</div>
+                        <div className="h-3 w-16 bg-text-primary/15 rounded"></div>
+                      </div>
+                      <div className="space-y-1">
+                        <div className="text-[10px] font-mono text-text-muted uppercase">Status</div>
+                        <div className="h-3 w-12 bg-border/50 rounded"></div>
+                      </div>
+                    </div>
+                    
+                    {/* Resources */}
+                    <div className="border-t border-border pt-3">
+                      <div className="text-[10px] font-mono text-text-muted uppercase mb-2">Resources</div>
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] text-text-muted">CPU:</span>
+                          <div className="h-2 w-20 bg-accent/20 rounded-full"></div>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] text-text-muted">RAM:</span>
+                          <div className="h-2 w-16 bg-accent/15 rounded-full"></div>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] text-text-muted">Storage:</span>
+                          <div className="h-2 w-24 bg-text-primary/10 rounded-full"></div>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    {/* Action Buttons */}
+                    <div className="flex gap-2 border-t border-border pt-3">
+                      <div className="h-8 flex-1 bg-accent/20 border border-accent/30 rounded flex items-center justify-center">
+                        <div className="h-3 w-12 bg-accent/40 rounded"></div>
+                      </div>
+                      <div className="h-8 w-8 bg-border/50 rounded flex items-center justify-center">
+                        <svg className="w-4 h-4 text-text-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                        </svg>
+                      </div>
                     </div>
                   </div>
                 </motion.div>
@@ -803,7 +985,7 @@ export default function Home() {
       </AnimatedSection>
 
       {/* Module: Premium Hosting */}
-      <AnimatedSection bootComplete={bootComplete} className="full-width-section relative">
+      <AnimatedSection bootComplete={bootComplete} scrollDirection={scrollDirection} className="full-width-section relative">
         <motion.div
           style={{ y: useTransform(containerScroll, [0, 1], ["0%", "12%"]) }}
           className="section-background depth-layer"
@@ -827,33 +1009,78 @@ export default function Home() {
               <FloatingCard delay={0.5} bootComplete={bootComplete}>
                 <motion.div
                   whileHover={{ y: -4 }}
-                  transition={{ type: "spring", stiffness: 300, damping: 25 }}
-                  className="system-card p-6 opacity-60"
+                  animate={bootComplete ? {
+                    y: [0, -3, 0],
+                  } : { y: 0 }}
+                  transition={{
+                    duration: 4,
+                    repeat: Infinity,
+                    ease: "easeInOut",
+                    delay: 0.5
+                  }}
+                  className="system-card p-6 opacity-60 w-full"
                 >
                   <div className="card-content space-y-4">
-                    <div className="flex items-center gap-3">
-                      <div className="h-5 w-32 bg-text-primary/15 rounded"></div>
-                      <div className="h-4 w-16 bg-border/50 rounded-full"></div>
-                    </div>
-                    <div className="space-y-2">
-                      <div className="flex items-center gap-4 text-xs font-mono">
-                        <div className="flex items-center gap-1">
-                          <span className="text-text-muted">Region:</span>
-                          <span className="h-3 w-16 bg-text-primary/15 rounded"></span>
+                    {/* Hosting Header */}
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="h-10 w-10 bg-gradient-to-br from-accent/20 to-accent/5 rounded border border-accent/20 flex items-center justify-center">
+                          <svg className="w-5 h-5 text-accent/50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01" />
+                          </svg>
                         </div>
-                        <div className="flex items-center gap-1">
-                          <span className="text-text-muted">Status:</span>
-                          <span className="h-3 w-12 bg-border/50 rounded"></span>
+                        <div className="space-y-1">
+                          <div className="h-3.5 w-28 bg-text-primary/20 rounded"></div>
+                          <div className="h-2.5 w-20 bg-text-muted/30 rounded"></div>
                         </div>
                       </div>
-                      <div className="flex items-center gap-1 text-xs font-mono">
-                        <span className="text-text-muted">Resources:</span>
-                        <span className="h-3 w-20 bg-text-primary/15 rounded"></span>
+                      <div className="h-6 w-14 bg-accent/30 rounded-full flex items-center justify-center">
+                        <div className="h-2 w-2 bg-accent rounded-full"></div>
                       </div>
                     </div>
-                    <div className="mt-4 flex gap-2 border-t border-border pt-4">
-                      <div className="h-7 flex-1 bg-border/50 rounded"></div>
-                      <div className="h-7 flex-1 bg-border/50 rounded"></div>
+                    
+                    {/* Hosting Stats */}
+                    <div className="grid grid-cols-2 gap-3 border-t border-border pt-3">
+                      <div className="space-y-1">
+                        <div className="text-[10px] font-mono text-text-muted uppercase">Region</div>
+                        <div className="h-3 w-16 bg-text-primary/15 rounded"></div>
+                      </div>
+                      <div className="space-y-1">
+                        <div className="text-[10px] font-mono text-text-muted uppercase">Status</div>
+                        <div className="h-3 w-12 bg-border/50 rounded"></div>
+                      </div>
+                    </div>
+                    
+                    {/* Resources */}
+                    <div className="border-t border-border pt-3">
+                      <div className="text-[10px] font-mono text-text-muted uppercase mb-2">Resources</div>
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] text-text-muted">CPU:</span>
+                          <div className="h-2 w-20 bg-accent/20 rounded-full"></div>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] text-text-muted">RAM:</span>
+                          <div className="h-2 w-16 bg-accent/15 rounded-full"></div>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] text-text-muted">Storage:</span>
+                          <div className="h-2 w-24 bg-text-primary/10 rounded-full"></div>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    {/* Action Buttons */}
+                    <div className="flex gap-2 border-t border-border pt-3">
+                      <div className="h-8 flex-1 bg-accent/20 border border-accent/30 rounded flex items-center justify-center">
+                        <div className="h-3 w-12 bg-accent/40 rounded"></div>
+                      </div>
+                      <div className="h-8 w-8 bg-border/50 rounded flex items-center justify-center">
+                        <svg className="w-4 h-4 text-text-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                        </svg>
+                      </div>
                     </div>
                   </div>
                 </motion.div>
@@ -863,7 +1090,7 @@ export default function Home() {
               <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true }}
+                viewport={{ once: false }}
                 transition={{ type: "spring", stiffness: 100, damping: 25 }}
                 className="mb-10"
               >
@@ -874,8 +1101,8 @@ export default function Home() {
                   <motion.span
                     initial={{ opacity: 0, scale: 0.8 }}
                     whileInView={{ opacity: 1, scale: 1 }}
-                    viewport={{ once: true }}
-                    transition={{ delay: 0.2, type: "spring", stiffness: 200, damping: 20 }}
+                    viewport={{ once: false }}
+                    transition={{ delay: getDelay(0.2, 0.2), type: "spring", stiffness: 200, damping: 20 }}
                     className="inline-flex items-center gap-1.5 rounded-full border border-accent/40 bg-accent/15 px-3 py-1 text-xs font-mono uppercase tracking-wider text-accent"
                   >
                     <span className="relative flex h-1.5 w-1.5">
@@ -894,9 +1121,9 @@ export default function Home() {
               <div className="space-y-3 border-t border-border pt-6">
                 <motion.div
                   initial={{ opacity: 0, x: -10 }}
-                  whileInView={{ opacity: 1, x: 0 }}
-                  viewport={{ once: true }}
-                  transition={{ delay: 0.1, type: "spring", stiffness: 200, damping: 25 }}
+                whileInView={{ opacity: 1, x: 0 }}
+                viewport={{ once: false }}
+                  transition={{ delay: getDelay(0.1, 0.3), type: "spring", stiffness: 200, damping: 25 }}
                   className="flex items-start gap-3"
                 >
                   <span className="mt-0.5 text-text-muted">→</span>
@@ -906,9 +1133,9 @@ export default function Home() {
                 </motion.div>
                 <motion.div
                   initial={{ opacity: 0, x: -10 }}
-                  whileInView={{ opacity: 1, x: 0 }}
-                  viewport={{ once: true }}
-                  transition={{ delay: 0.2, type: "spring", stiffness: 200, damping: 25 }}
+                whileInView={{ opacity: 1, x: 0 }}
+                viewport={{ once: false }}
+                  transition={{ delay: getDelay(0.2, 0.3), type: "spring", stiffness: 200, damping: 25 }}
                   className="flex items-start gap-3"
                 >
                   <span className="mt-0.5 text-text-muted">→</span>
@@ -918,9 +1145,9 @@ export default function Home() {
                 </motion.div>
                 <motion.div
                   initial={{ opacity: 0, x: -10 }}
-                  whileInView={{ opacity: 1, x: 0 }}
-                  viewport={{ once: true }}
-                  transition={{ delay: 0.3, type: "spring", stiffness: 200, damping: 25 }}
+                whileInView={{ opacity: 1, x: 0 }}
+                viewport={{ once: false }}
+                  transition={{ delay: getDelay(0.3, 0.3), type: "spring", stiffness: 200, damping: 25 }}
                   className="flex items-start gap-3"
                 >
                   <span className="mt-0.5 text-text-muted">→</span>
@@ -932,8 +1159,8 @@ export default function Home() {
               <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true }}
-                transition={{ delay: 0.4, type: "spring", stiffness: 100, damping: 25 }}
+                viewport={{ once: false }}
+                transition={{ delay: getDelay(0.4, 0.4), type: "spring", stiffness: 100, damping: 25 }}
                 className="mt-8"
               >
                 <Link
@@ -949,12 +1176,12 @@ export default function Home() {
       </AnimatedSection>
 
       {/* Module: Philosophy */}
-      <AnimatedSection bootComplete={bootComplete} className="full-width-section relative bg-background-secondary">
+      <AnimatedSection bootComplete={bootComplete} scrollDirection={scrollDirection} className="full-width-section relative bg-background-secondary">
         <div className="section-content mx-auto w-full max-w-4xl px-4 py-24 sm:px-6 lg:px-8 lg:py-32">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
+            viewport={{ once: false }}
             transition={{ type: "spring", stiffness: 100, damping: 25 }}
             className="mb-10"
           >
@@ -966,8 +1193,8 @@ export default function Home() {
               <motion.p
                 initial={{ opacity: 0, y: 20 }}
                 whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true }}
-                transition={{ delay: 0.1, type: "spring", stiffness: 100, damping: 25 }}
+                viewport={{ once: false }}
+                transition={{ delay: getDelay(0.1, 0.3), type: "spring", stiffness: 100, damping: 25 }}
               >
                 Local-first, always. All server data remains on user-controlled hardware
                 by default. No cloud dependencies or platform lock-in. When you need cloud
@@ -976,8 +1203,8 @@ export default function Home() {
               <motion.p
                 initial={{ opacity: 0, y: 20 }}
                 whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true }}
-                transition={{ delay: 0.2, type: "spring", stiffness: 100, damping: 25 }}
+                viewport={{ once: false }}
+                transition={{ delay: getDelay(0.2, 0.3), type: "spring", stiffness: 100, damping: 25 }}
               >
                 Environmental responsibility through recycled hardware. Recycle Hosting repurposes
                 enterprise PCs, reducing electronic waste while delivering reliable hosting.
@@ -987,8 +1214,8 @@ export default function Home() {
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-            transition={{ delay: 0.3, type: "spring", stiffness: 100, damping: 25 }}
+            viewport={{ once: false }}
+            transition={{ delay: getDelay(0.3, 0.3), type: "spring", stiffness: 100, damping: 25 }}
             className="mt-10 grid grid-cols-3 gap-8 border-t border-border pt-10"
           >
             <div>
