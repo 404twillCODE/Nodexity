@@ -1,5 +1,6 @@
 import { motion } from "framer-motion";
 import { useState, useEffect, useRef } from "react";
+import ToggleSwitch from "./ToggleSwitch";
 
 export default function SettingsView() {
   const [activeTab, setActiveTab] = useState<'general' | 'server' | 'console' | 'dev'>('general');
@@ -196,11 +197,10 @@ export default function SettingsView() {
                     <span>Show boot sequence</span>
                     <p className="text-xs text-text-muted">Display boot animation on launch</p>
                   </div>
-                  <input
-                    type="checkbox"
+                  <ToggleSwitch
                     checked={settings?.showBootSequence !== false}
-                    onChange={(e) => saveSetting('showBootSequence', e.target.checked)}
-                    className="w-4 h-4 accent-accent cursor-pointer"
+                    onChange={(checked) => saveSetting('showBootSequence', checked)}
+                    ariaLabel="Show boot sequence"
                   />
                 </div>
                 <div className="flex items-center justify-between">
@@ -208,11 +208,10 @@ export default function SettingsView() {
                     <span>Minimize to system tray</span>
                     <p className="text-xs text-text-muted">Keep app running in background</p>
                   </div>
-                  <input
-                    type="checkbox"
+                  <ToggleSwitch
                     checked={settings?.minimizeToTray || false}
-                    onChange={(e) => saveSetting('minimizeToTray', e.target.checked)}
-                    className="w-4 h-4 accent-accent cursor-pointer"
+                    onChange={(checked) => saveSetting('minimizeToTray', checked)}
+                    ariaLabel="Minimize to system tray"
                   />
                 </div>
                 <div className="flex items-center justify-between">
@@ -220,11 +219,10 @@ export default function SettingsView() {
                     <span>Start with Windows</span>
                     <p className="text-xs text-text-muted">Launch automatically on system startup</p>
                   </div>
-                  <input
-                    type="checkbox"
+                  <ToggleSwitch
                     checked={settings?.startWithWindows || false}
-                    onChange={(e) => saveSetting('startWithWindows', e.target.checked)}
-                    className="w-4 h-4 accent-accent cursor-pointer"
+                    onChange={(checked) => saveSetting('startWithWindows', checked)}
+                    ariaLabel="Start with Windows"
                   />
                 </div>
                 <div className="flex items-center justify-between">
@@ -232,11 +230,10 @@ export default function SettingsView() {
                     <span>Check for updates automatically</span>
                     <p className="text-xs text-text-muted">Automatically check for app updates</p>
                   </div>
-                  <input
-                    type="checkbox"
+                  <ToggleSwitch
                     checked={settings?.autoUpdateCheck !== false}
-                    onChange={(e) => saveSetting('autoUpdateCheck', e.target.checked)}
-                    className="w-4 h-4 accent-accent cursor-pointer"
+                    onChange={(checked) => saveSetting('autoUpdateCheck', checked)}
+                    ariaLabel="Check for updates automatically"
                   />
                 </div>
               </div>
@@ -257,11 +254,10 @@ export default function SettingsView() {
                     <span>Server status changes</span>
                     <p className="text-xs text-text-muted">Notify when servers start or stop</p>
                   </div>
-                  <input
-                    type="checkbox"
+                  <ToggleSwitch
                     checked={settings?.notifications?.statusChanges !== false}
-                    onChange={(e) => saveNestedSetting(['notifications', 'statusChanges'], e.target.checked)}
-                    className="w-4 h-4 accent-accent cursor-pointer"
+                    onChange={(checked) => saveNestedSetting(['notifications', 'statusChanges'], checked)}
+                    ariaLabel="Server status changes notifications"
                   />
                 </div>
                 <div className="flex items-center justify-between">
@@ -269,11 +265,10 @@ export default function SettingsView() {
                     <span>Server crashes</span>
                     <p className="text-xs text-text-muted">Alert when servers crash unexpectedly</p>
                   </div>
-                  <input
-                    type="checkbox"
+                  <ToggleSwitch
                     checked={settings?.notifications?.crashes !== false}
-                    onChange={(e) => saveNestedSetting(['notifications', 'crashes'], e.target.checked)}
-                    className="w-4 h-4 accent-accent cursor-pointer"
+                    onChange={(checked) => saveNestedSetting(['notifications', 'crashes'], checked)}
+                    ariaLabel="Server crashes notifications"
                   />
                 </div>
                 <div className="flex items-center justify-between">
@@ -281,11 +276,10 @@ export default function SettingsView() {
                     <span>Update available</span>
                     <p className="text-xs text-text-muted">Notify when app updates are available</p>
                   </div>
-                  <input
-                    type="checkbox"
+                  <ToggleSwitch
                     checked={settings?.notifications?.updates !== false}
-                    onChange={(e) => saveNestedSetting(['notifications', 'updates'], e.target.checked)}
-                    className="w-4 h-4 accent-accent cursor-pointer"
+                    onChange={(checked) => saveNestedSetting(['notifications', 'updates'], checked)}
+                    ariaLabel="Update available notifications"
                   />
                 </div>
               </div>
@@ -350,11 +344,10 @@ export default function SettingsView() {
                     <span>Auto-backup enabled</span>
                     <p className="text-xs text-text-muted">Automatically backup servers</p>
                   </div>
-                  <input
-                    type="checkbox"
+                  <ToggleSwitch
                     checked={settings?.autoBackup !== false}
-                    onChange={(e) => saveSetting('autoBackup', e.target.checked)}
-                    className="w-4 h-4 accent-accent cursor-pointer"
+                    onChange={(checked) => saveSetting('autoBackup', checked)}
+                    ariaLabel="Auto-backup enabled"
                   />
                 </div>
                 {settings?.autoBackup && (
@@ -407,11 +400,10 @@ export default function SettingsView() {
                     <span>Auto-scroll by default</span>
                     <p className="text-xs text-text-muted">Automatically scroll console to bottom</p>
                   </div>
-                  <input
-                    type="checkbox"
+                  <ToggleSwitch
                     checked={settings?.consoleAutoScroll !== false}
-                    onChange={(e) => saveSetting('consoleAutoScroll', e.target.checked)}
-                    className="w-4 h-4 accent-accent cursor-pointer"
+                    onChange={(checked) => saveSetting('consoleAutoScroll', checked)}
+                    ariaLabel="Auto-scroll by default"
                   />
                 </div>
                 <div>
@@ -432,11 +424,10 @@ export default function SettingsView() {
                     <span>Show timestamps</span>
                     <p className="text-xs text-text-muted">Display timestamps in console output</p>
                   </div>
-                  <input
-                    type="checkbox"
+                  <ToggleSwitch
                     checked={settings?.showTimestamps !== false}
-                    onChange={(e) => saveSetting('showTimestamps', e.target.checked)}
-                    className="w-4 h-4 accent-accent cursor-pointer"
+                    onChange={(checked) => saveSetting('showTimestamps', checked)}
+                    ariaLabel="Show timestamps"
                   />
                 </div>
                 <div className="flex items-center justify-between">
@@ -444,11 +435,10 @@ export default function SettingsView() {
                     <span>Word wrap</span>
                     <p className="text-xs text-text-muted">Wrap long lines in console</p>
                   </div>
-                  <input
-                    type="checkbox"
+                  <ToggleSwitch
                     checked={settings?.consoleWordWrap || false}
-                    onChange={(e) => saveSetting('consoleWordWrap', e.target.checked)}
-                    className="w-4 h-4 accent-accent cursor-pointer"
+                    onChange={(checked) => saveSetting('consoleWordWrap', checked)}
+                    ariaLabel="Word wrap"
                   />
                 </div>
                 <div>
@@ -486,11 +476,10 @@ export default function SettingsView() {
                     <span>Enable developer mode</span>
                     <p className="text-xs text-text-muted">Show advanced developer options</p>
                   </div>
-                  <input
-                    type="checkbox"
+                  <ToggleSwitch
                     checked={devMode}
-                    onChange={(e) => saveDevMode(e.target.checked)}
-                    className="w-4 h-4 accent-yellow-500 cursor-pointer"
+                    onChange={(checked) => saveDevMode(checked)}
+                    ariaLabel="Enable developer mode"
                   />
                 </div>
                 {devMode && (
@@ -523,11 +512,10 @@ export default function SettingsView() {
                         <span>Enable debug logging</span>
                         <p className="text-xs text-text-muted">Show detailed debug information</p>
                       </div>
-                      <input
-                        type="checkbox"
+                      <ToggleSwitch
                         checked={settings?.debugLogging || false}
-                        onChange={(e) => saveSetting('debugLogging', e.target.checked)}
-                        className="w-4 h-4 accent-yellow-500 cursor-pointer"
+                        onChange={(checked) => saveSetting('debugLogging', checked)}
+                        ariaLabel="Enable debug logging"
                       />
                     </div>
                     <div className="flex items-center justify-between">
@@ -535,11 +523,10 @@ export default function SettingsView() {
                         <span>Show performance metrics</span>
                         <p className="text-xs text-text-muted">Display performance information</p>
                       </div>
-                      <input
-                        type="checkbox"
+                      <ToggleSwitch
                         checked={settings?.showPerformanceMetrics || false}
-                        onChange={(e) => saveSetting('showPerformanceMetrics', e.target.checked)}
-                        className="w-4 h-4 accent-yellow-500 cursor-pointer"
+                        onChange={(checked) => saveSetting('showPerformanceMetrics', checked)}
+                        ariaLabel="Show performance metrics"
                       />
                     </div>
                     <div>

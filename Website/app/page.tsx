@@ -176,6 +176,10 @@ export default function Home() {
   const containerRef = useRef<HTMLDivElement>(null);
   const [bootComplete, setBootComplete] = useState(false);
   const scrollDirection = useScrollDirection();
+  const [easterEggActive, setEasterEggActive] = useState(false);
+  const [creeperWalking, setCreeperWalking] = useState(false);
+  const [creeperLooking, setCreeperLooking] = useState(false);
+  const [exploded, setExploded] = useState(false);
 
   // Helper to reverse delay based on scroll direction
   const getDelay = (baseDelay: number, maxDelay: number = 0.4) => {
@@ -1245,6 +1249,218 @@ export default function Home() {
           </motion.div>
         </div>
       </AnimatedSection>
+
+      {/* Easter Egg: Creeper Button - Hidden at bottom */}
+      {bootComplete && (
+        <AnimatedSection bootComplete={bootComplete} scrollDirection={scrollDirection} className="full-width-section relative bg-background-secondary">
+          <div className="section-content mx-auto w-full max-w-7xl px-4 py-24 sm:px-6 lg:px-8 lg:py-32">
+            <div className="flex justify-center items-center min-h-[200px] relative">
+              {/* Creeper walking animation */}
+              {creeperWalking && !exploded && (
+                <motion.div
+                  initial={{ x: "-100%", opacity: 0 }}
+                  animate={{ x: "-140px", opacity: 1 }}
+                  transition={{ duration: 3, ease: "easeInOut" }}
+                  className="absolute left-1/2 top-1/2 -translate-y-1/2 z-10"
+                >
+                  <motion.div
+                    animate={creeperLooking ? {
+                      scale: [1, 1.15, 1],
+                    } : {
+                      y: [0, -12, 0],
+                    }}
+                    transition={creeperLooking ? {
+                      duration: 0.15,
+                      repeat: Infinity,
+                      ease: "easeInOut",
+                    } : {
+                      duration: 0.4,
+                      repeat: Infinity,
+                      ease: "easeInOut",
+                    }}
+                    className="w-16 h-24 relative"
+                  >
+                    {/* Glow effect when looking */}
+                    {creeperLooking && (
+                      <motion.div
+                        animate={{
+                          opacity: [0.5, 1, 0.5],
+                          scale: [1, 1.2, 1],
+                        }}
+                        transition={{
+                          duration: 0.3,
+                          repeat: Infinity,
+                          ease: "easeInOut",
+                        }}
+                        className="absolute inset-0 bg-accent rounded-full blur-xl -z-10"
+                        style={{ boxShadow: "0 0 40px rgba(46, 242, 162, 0.8)" }}
+                      />
+                    )}
+                    {/* Realistic Minecraft Creeper - Blocky Design */}
+                    <svg
+                      viewBox="0 0 48 72"
+                      className="w-full h-full drop-shadow-2xl relative z-10"
+                      style={{ imageRendering: "pixelated", filter: "drop-shadow(0 8px 16px rgba(0,0,0,0.6))" }}
+                    >
+                      {/* Define pattern for pixelated green/grey texture */}
+                      <defs>
+                        <pattern id="creeperTexture" x="0" y="0" width="4" height="4" patternUnits="userSpaceOnUse">
+                          <rect width="4" height="4" fill="#1AAD1A" />
+                          <rect x="0" y="0" width="2" height="2" fill="#2ECC40" />
+                          <rect x="2" y="2" width="2" height="2" fill="#0D7B0D" />
+                          <rect x="1" y="1" width="1" height="1" fill="#B8D4B8" />
+                          <rect x="3" y="3" width="1" height="1" fill="#B8D4B8" />
+                        </pattern>
+                        <pattern id="creeperDarkTexture" x="0" y="0" width="4" height="4" patternUnits="userSpaceOnUse">
+                          <rect width="4" height="4" fill="#0D7B0D" />
+                          <rect x="0" y="0" width="2" height="2" fill="#1AAD1A" />
+                          <rect x="2" y="2" width="2" height="2" fill="#000" />
+                        </pattern>
+                      </defs>
+                      
+                      {/* Head - Square block */}
+                      <rect x="12" y="4" width="24" height="24" fill="url(#creeperTexture)" />
+                      <rect x="12" y="4" width="24" height="24" fill="none" stroke="#0D7B0D" strokeWidth="0.5" opacity="0.3" />
+                      
+                      {/* Head shading for 3D effect */}
+                      <rect x="12" y="4" width="24" height="6" fill="#2ECC40" opacity="0.4" />
+                      <rect x="12" y="22" width="24" height="6" fill="#0D7B0D" opacity="0.4" />
+                      <rect x="12" y="4" width="6" height="24" fill="#2ECC40" opacity="0.3" />
+                      <rect x="30" y="4" width="6" height="24" fill="#0D7B0D" opacity="0.3" />
+                      
+                      {/* Eyes - Two small black squares */}
+                      <rect x="16" y="10" width="4" height="4" fill="#000" />
+                      <rect x="28" y="10" width="4" height="4" fill="#000" />
+                      
+                      {/* Mouth - Downturned U shape (frown) - more pronounced */}
+                      <rect x="14" y="18" width="20" height="8" fill="#000" />
+                      <rect x="16" y="20" width="16" height="6" fill="#000" />
+                      <rect x="18" y="22" width="12" height="4" fill="#000" />
+                      <rect x="20" y="24" width="8" height="2" fill="#000" />
+                      {/* Mouth highlight */}
+                      <rect x="20" y="22" width="2" height="2" fill="#1AAD1A" opacity="0.3" />
+                      <rect x="26" y="22" width="2" height="2" fill="#1AAD1A" opacity="0.3" />
+                      
+                      {/* Body - Elongated block */}
+                      <rect x="10" y="28" width="28" height="32" fill="url(#creeperTexture)" />
+                      <rect x="10" y="28" width="28" height="32" fill="none" stroke="#0D7B0D" strokeWidth="0.5" opacity="0.3" />
+                      
+                      {/* Body shading for 3D effect */}
+                      <rect x="10" y="28" width="28" height="8" fill="#2ECC40" opacity="0.4" />
+                      <rect x="10" y="52" width="28" height="8" fill="#0D7B0D" opacity="0.4" />
+                      <rect x="10" y="28" width="6" height="32" fill="#2ECC40" opacity="0.3" />
+                      <rect x="32" y="28" width="6" height="32" fill="#0D7B0D" opacity="0.3" />
+                      
+                      {/* Legs - Four short blocky legs in 2x2 grid pattern */}
+                      {/* Left front leg */}
+                      <rect x="10" y="60" width="9" height="8" fill="url(#creeperDarkTexture)" />
+                      <rect x="10" y="66" width="9" height="2" fill="#000" />
+                      <rect x="12" y="68" width="2" height="2" fill="#1AAD1A" />
+                      <rect x="14" y="68" width="2" height="2" fill="#000" />
+                      <rect x="16" y="68" width="2" height="2" fill="#1AAD1A" />
+                      
+                      {/* Right front leg */}
+                      <rect x="19" y="60" width="9" height="8" fill="url(#creeperDarkTexture)" />
+                      <rect x="19" y="66" width="9" height="2" fill="#000" />
+                      <rect x="21" y="68" width="2" height="2" fill="#1AAD1A" />
+                      <rect x="23" y="68" width="2" height="2" fill="#000" />
+                      <rect x="25" y="68" width="2" height="2" fill="#1AAD1A" />
+                      
+                      {/* Left back leg (slightly offset to show depth) */}
+                      <rect x="12" y="60" width="9" height="8" fill="url(#creeperDarkTexture)" opacity="0.9" />
+                      <rect x="12" y="66" width="9" height="2" fill="#000" />
+                      <rect x="14" y="68" width="2" height="2" fill="#1AAD1A" />
+                      <rect x="16" y="68" width="2" height="2" fill="#000" />
+                      <rect x="18" y="68" width="2" height="2" fill="#1AAD1A" />
+                      
+                      {/* Right back leg */}
+                      <rect x="29" y="60" width="9" height="8" fill="url(#creeperDarkTexture)" />
+                      <rect x="29" y="66" width="9" height="2" fill="#000" />
+                      <rect x="31" y="68" width="2" height="2" fill="#1AAD1A" />
+                      <rect x="33" y="68" width="2" height="2" fill="#000" />
+                      <rect x="35" y="68" width="2" height="2" fill="#1AAD1A" />
+                    </svg>
+                  </motion.div>
+                </motion.div>
+              )}
+
+              {/* Explosion effect on button */}
+              {exploded && (
+                <motion.div
+                  initial={{ scale: 0, opacity: 1 }}
+                  animate={{ scale: 6, opacity: 0 }}
+                  transition={{ duration: 0.8, ease: "easeOut" }}
+                  className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none z-30"
+                >
+                  <div className="w-40 h-40 bg-accent rounded-full blur-3xl" style={{ boxShadow: "0 0 100px rgba(46, 242, 162, 1)" }} />
+                  <motion.div
+                    initial={{ scale: 0 }}
+                    animate={{ scale: 3, opacity: 0 }}
+                    transition={{ duration: 0.6, delay: 0.1 }}
+                    className="absolute inset-0 bg-accent rounded-full blur-2xl"
+                  />
+                </motion.div>
+              )}
+
+              {/* Easter Egg Button */}
+              <motion.button
+                onClick={() => {
+                  if (!easterEggActive && !exploded) {
+                    setEasterEggActive(true);
+                    setCreeperWalking(true);
+                    // After walking, creeper looks at you
+                    setTimeout(() => {
+                      setCreeperLooking(true);
+                      // Then explodes
+                      setTimeout(() => {
+                        setExploded(true);
+                        setTimeout(() => {
+                          setCreeperWalking(false);
+                          setCreeperLooking(false);
+                        }, 800);
+                      }, 1000);
+                    }, 3000);
+                  }
+                }}
+                className={`easter-egg-button ${exploded ? "exploded" : ""} ${easterEggActive ? "active" : ""}`}
+                whileHover={!exploded && !creeperWalking ? { scale: 1.05 } : {}}
+                whileTap={!exploded && !creeperWalking ? { scale: 0.95 } : {}}
+                style={{
+                  opacity: exploded ? 0 : 1,
+                  pointerEvents: exploded || creeperWalking ? "none" : "auto",
+                }}
+              >
+                <svg
+                  viewBox="0 0 32 32"
+                  height="24"
+                  width="24"
+                  xmlns="http://www.w3.org/2000/svg"
+                  className="easter-egg-icon"
+                >
+                  <path d="M30 2H2v28h28z" fill="#52a535"></path>
+                  <path
+                    d="M24.4 13.2h-5.6v.47h5.6zm-5.6 8.4h-5.6v.47h5.6zm2.8 2.8h-2.8v.47h2.8zm-8.4 0h-2.8v.47h2.8zm0-11.2H7.6v.47h5.6z"
+                    fill="#86d562"
+                  ></path>
+                  <path
+                    d="M24.4 13.2V7.6h-5.6v5.6h-5.6V16h-2.8v8.4h2.8v-2.8h5.6v2.8h2.8V16h-2.8v-2.8zM13.2 7.6H7.6v5.6h5.6z"
+                  ></path>
+                  <path
+                    d="M24.4 7.6h-5.6v.47h5.6zm-5.6 5.6h-5.6v.47h5.6zm-5.6-5.6H7.6v.47h5.6zm0 8.4h-2.8v.47h2.8zm8.4 0h-2.8v.47h2.8z"
+                    fill="#2a641c"
+                  ></path>
+                </svg>
+
+                <div className="easter-egg-text">
+                  <span>MINECRAFT</span>
+                  <span>I LOVE MC</span>
+                  <span>CREEPERS</span>
+                </div>
+              </motion.button>
+            </div>
+          </div>
+        </AnimatedSection>
+      )}
     </div>
   );
 }
