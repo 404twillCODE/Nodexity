@@ -8,6 +8,14 @@ export default function Footer() {
           </p>
           <div className="flex gap-6">
             <a
+              href="https://discord.gg/RVTAEbdDBJ"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-sm text-text-muted transition-colors hover:text-accent"
+            >
+              Discord
+            </a>
+            <a
               href="#"
               className="text-sm text-text-muted transition-colors hover:text-accent"
             >

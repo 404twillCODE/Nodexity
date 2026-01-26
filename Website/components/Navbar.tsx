@@ -30,6 +30,14 @@ export default function Navbar() {
             >
               Status
             </Link>
+            <a
+              href="https://discord.gg/RVTAEbdDBJ"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-sm text-text-secondary transition-colors hover:text-accent"
+            >
+              Discord
+            </a>
           </div>
         </div>
       </div>

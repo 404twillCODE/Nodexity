@@ -70,11 +70,24 @@ If you want to check out the desktop application in its current development stag
 
 > **Note:** The website is also in active development and may have incomplete features or styling issues.
 
+## Community
+
+- Discord: `https://discord.gg/RVTAEbdDBJ`
+
 ## Repository
 
 GitHub: [https://github.com/404twillCODE/Hexnode](https://github.com/404twillCODE/Hexnode)
 
 ## License
 
-TBD
+This repository is **multi-licensed by directory**:
+
+- `App/` (Desktop app / Server Manager): **AGPL-3.0**
+- `Website/` (Marketing site): **MIT**
+
+Hosting backend/infra code will be kept private until it is ready.
+
+## Disclaimer
+
+Hexnode is not affiliated with Mojang AB or Microsoft. “Minecraft” is a trademark of Mojang AB.
 

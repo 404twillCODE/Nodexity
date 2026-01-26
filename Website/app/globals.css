@@ -108,7 +108,6 @@
     transform: translateY(-2px);
   }
 
-
   .btn-primary {
     @apply relative overflow-hidden px-6 py-2.5 text-xs font-medium uppercase tracking-wider;
     background: rgba(46, 242, 162, 0.15);
@@ -435,110 +434,6 @@
     50%, 100% {
       opacity: 0;
     }
-  }
-
-  /* Easter Egg Button - Minecraft Style */
-  .easter-egg-button {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 12px 14px;
-    font-size: 16px;
-    font-weight: bold;
-    font-family: monospace;
-    color: white;
-    background: rgba(34, 139, 34, 0.8);
-    border: 2px solid rgba(82, 165, 53, 0.5);
-    border-bottom-width: 4px;
-    border-radius: 0;
-    cursor: pointer;
-    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-    position: relative;
-    overflow: hidden;
-    box-shadow: 
-      inset 0 1px 0 rgba(82, 165, 53, 0.3),
-      0 2px 4px rgba(0, 0, 0, 0.5);
-    image-rendering: pixelated;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    opacity: 0.4;
-  }
-
-  .easter-egg-button:hover {
-    background: rgba(0, 0, 0, 0.9);
-    border-color: rgba(82, 165, 53, 0.8);
-    border-bottom-width: 2px;
-    transform: translateY(1px);
-    opacity: 1;
-    box-shadow: 
-      inset 0 1px 0 rgba(82, 165, 53, 0.3),
-      0 1px 2px rgba(0, 0, 0, 0.5);
-  }
-
-  .easter-egg-button.exploded {
-    opacity: 0;
-    transform: scale(0);
-    pointer-events: none;
-  }
-
-  .easter-egg-icon {
-    width: 24px;
-    height: 24px;
-    transition: transform 0.3s;
-    image-rendering: pixelated;
-  }
-
-  .easter-egg-button:hover .easter-egg-icon {
-    transform: scale(1.1);
-  }
-
-  .easter-egg-text {
-    position: relative;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    width: 140px;
-    height: 20px;
-    overflow: hidden;
-  }
-
-  .easter-egg-text span {
-    position: absolute;
-    transition: opacity 0.3s ease-in-out;
-    font-size: 14px;
-    white-space: nowrap;
-  }
-
-  .easter-egg-text span:first-child {
-    opacity: 1;
-  }
-
-  .easter-egg-text span:nth-child(2),
-  .easter-egg-text span:nth-child(3) {
-    opacity: 0;
-  }
-
-  .easter-egg-button:hover .easter-egg-text span:first-child {
-    opacity: 0;
-  }
-
-  .easter-egg-button:hover .easter-egg-text span:nth-child(2) {
-    opacity: 1;
-  }
-
-  .easter-egg-button.active {
-    background: rgba(255, 255, 255, 0.9);
-    color: black;
-    border-color: rgba(82, 165, 53, 0.8);
-  }
-
-  .easter-egg-button.active .easter-egg-text span:first-child,
-  .easter-egg-button.active .easter-egg-text span:nth-child(2) {
-    opacity: 0;
-  }
-
-  .easter-egg-button.active .easter-egg-text span:nth-child(3) {
-    opacity: 1;
   }
 }
 
