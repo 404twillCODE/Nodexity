@@ -48,6 +48,12 @@ export function SystemFooter() {
               Discord
             </a>
             <a
+              href="/faq"
+              className="text-sm text-text-muted transition-colors hover:text-accent"
+            >
+              FAQ
+            </a>
+            <a
               href="https://discord.gg/RVTAEbdDBJ"
               target="_blank"
               rel="noopener noreferrer"
