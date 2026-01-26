@@ -110,6 +110,48 @@ const defaultFeatures = [
   "Local-first architecture - all data stored on your machine, no cloud dependencies"
 ];
 
+const upcomingItems = [
+  {
+    title: "Launcher",
+    status: "Planned",
+    description: "Custom Minecraft launcher for profiles, mods, and game installs."
+  },
+  {
+    title: "Recycle Hosting",
+    status: "Planned",
+    description: "Eco-friendly hosting powered by repurposed hardware."
+  },
+  {
+    title: "Premium Hosting",
+    status: "Planned",
+    description: "Global edge hosting for serious workloads and performance."
+  },
+  {
+    title: "Early Access Builds",
+    status: "Upcoming",
+    description: "Invite-only builds for community testing and feedback."
+  }
+];
+
+const faqItems = [
+  {
+    question: "Is Hexnode open source?",
+    answer: "Yes. The desktop app is AGPL-3.0 and the website is MIT."
+  },
+  {
+    question: "Do I need an account?",
+    answer: "No account is required to run the desktop app locally."
+  },
+  {
+    question: "Where is my data stored?",
+    answer: "All server data stays on your machine by default."
+  },
+  {
+    question: "When is the release?",
+    answer: "We are in active development. Join Discord for updates."
+  }
+];
+
 function FeatureList() {
   const [isExpanded, setIsExpanded] = useState(false);
   const hiddenFeatures = allFeatures.filter(f => !defaultFeatures.includes(f));
@@ -1170,8 +1212,83 @@ export default function Home() {
         </div>
       </AnimatedSection>
 
-      {/* Module: Philosophy */}
+      {/* Section: What's Coming */}
+      <AnimatedSection bootComplete={bootComplete} scrollDirection={scrollDirection} className="full-width-section relative">
+        <div className="section-content mx-auto w-full max-w-6xl px-4 py-24 sm:px-6 lg:px-8 lg:py-32">
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: false }}
+            transition={{ type: "spring", stiffness: 100, damping: 25 }}
+            className="mb-10"
+          >
+            <h2 className="text-3xl font-semibold tracking-tight text-text-primary sm:text-4xl lg:text-5xl font-mono">
+              WHAT&apos;S COMING
+            </h2>
+          </motion.div>
+          <div className="grid gap-6 md:grid-cols-2">
+            {upcomingItems.map((item, index) => (
+              <motion.div
+                key={item.title}
+                initial={{ opacity: 0, y: 20 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: false }}
+                transition={{ delay: 0.1 + (index * 0.1), type: "spring", stiffness: 120, damping: 20 }}
+                className="system-card p-6"
+              >
+                <div className="mb-3 text-xs font-mono uppercase tracking-wider text-text-muted">
+                  {item.status}
+                </div>
+                <h3 className="mb-2 text-lg font-semibold text-text-primary sm:text-xl">
+                  {item.title}
+                </h3>
+                <p className="text-sm leading-relaxed text-text-secondary sm:text-base">
+                  {item.description}
+                </p>
+              </motion.div>
+            ))}
+          </div>
+        </div>
+      </AnimatedSection>
+
+      {/* Section: FAQ */}
       <AnimatedSection bootComplete={bootComplete} scrollDirection={scrollDirection} className="full-width-section relative bg-background-secondary">
+        <div className="section-content mx-auto w-full max-w-4xl px-4 py-24 sm:px-6 lg:px-8 lg:py-32">
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: false }}
+            transition={{ type: "spring", stiffness: 100, damping: 25 }}
+            className="mb-10"
+          >
+            <h2 className="text-3xl font-semibold tracking-tight text-text-primary sm:text-4xl lg:text-5xl font-mono">
+              FAQ
+            </h2>
+          </motion.div>
+          <div className="space-y-6 border-t border-border pt-8">
+            {faqItems.map((item, index) => (
+              <motion.div
+                key={item.question}
+                initial={{ opacity: 0, y: 10 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: false }}
+                transition={{ delay: 0.1 + (index * 0.08), type: "spring", stiffness: 120, damping: 20 }}
+                className="space-y-2"
+              >
+                <h3 className="text-base font-semibold text-text-primary sm:text-lg">
+                  {item.question}
+                </h3>
+                <p className="text-sm leading-relaxed text-text-secondary sm:text-base">
+                  {item.answer}
+                </p>
+              </motion.div>
+            ))}
+          </div>
+        </div>
+      </AnimatedSection>
+
+      {/* Module: Philosophy */}
+      <AnimatedSection bootComplete={bootComplete} scrollDirection={scrollDirection} className="full-width-section relative">
         <div className="section-content mx-auto w-full max-w-4xl px-4 py-24 sm:px-6 lg:px-8 lg:py-32">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
