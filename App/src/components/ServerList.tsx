@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import ServerCard from "./ServerCard";
 import { useServerManager } from "../hooks/useServerManager";
 import JavaStatusIndicator from "./JavaStatusIndicator";
@@ -19,6 +19,13 @@ export default function ServerList({ onServerClick }: ServerListProps) {
     totalRAMMB: number;
     totalDiskGB: number;
   } | null>(null);
+  const [diskUsageGB, setDiskUsageGB] = useState<number>(0);
+  const lastStatsRef = useRef<{ cpu: number; ramMB: number; diskGB: number } | null>(null);
+  const usageIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const diskIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const isScrollingRef = useRef(false);
+  const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const handleStart = async (serverName: string) => {
     const server = servers.find(s => s.name === serverName);
@@ -51,33 +58,91 @@ export default function ServerList({ onServerClick }: ServerListProps) {
       return;
     }
 
-    const loadStats = async () => {
+    const loadUsageStats = async () => {
+      if (isScrollingRef.current) return;
       try {
-        const [usageResult, diskResult] = await Promise.all([
-          getAllServersUsage(),
-          getServersDiskUsage()
-        ]);
-
-        if (usageResult.success && diskResult.success) {
-          setAggregateStats({
+        const usageResult = await getAllServersUsage();
+        if (usageResult.success) {
+          const nextStats = {
             totalCPU: usageResult.totalCPU || 0,
             totalRAM: usageResult.totalRAM || 0,
             totalRAMMB: usageResult.totalRAMMB || 0,
-            totalDiskGB: diskResult.totalSizeGB || 0
-          });
+            totalDiskGB: diskUsageGB || 0
+          };
+
+          const last = lastStatsRef.current;
+          const cpuDiff = Math.abs((last?.cpu ?? 0) - nextStats.totalCPU);
+          const ramDiff = Math.abs((last?.ramMB ?? 0) - nextStats.totalRAMMB);
+          const diskDiff = Math.abs((last?.diskGB ?? 0) - nextStats.totalDiskGB);
+
+          if (!last || cpuDiff > 0.5 || ramDiff > 10 || diskDiff > 0.01) {
+            lastStatsRef.current = {
+              cpu: nextStats.totalCPU,
+              ramMB: nextStats.totalRAMMB,
+              diskGB: nextStats.totalDiskGB
+            };
+            requestAnimationFrame(() => setAggregateStats(nextStats));
+          }
         }
       } catch (error) {
         console.error('Failed to load aggregate stats:', error);
       }
     };
 
-    loadStats();
-    const interval = setInterval(loadStats, 2000); // Update every 2 seconds
-    return () => clearInterval(interval);
-  }, [servers, getAllServersUsage, getServersDiskUsage]);
+    const loadDiskStats = async () => {
+      try {
+        const diskResult = await getServersDiskUsage();
+        if (diskResult.success) {
+          setDiskUsageGB(diskResult.totalSizeGB || 0);
+        }
+      } catch (error) {
+        console.error('Failed to load disk usage:', error);
+      }
+    };
+
+    loadUsageStats();
+    loadDiskStats();
+
+    if (usageIntervalRef.current) clearInterval(usageIntervalRef.current);
+    if (diskIntervalRef.current) clearInterval(diskIntervalRef.current);
+
+    usageIntervalRef.current = setInterval(loadUsageStats, 500); // fast CPU/RAM
+    diskIntervalRef.current = setInterval(loadDiskStats, 15000); // slow disk scan
+
+    return () => {
+      if (usageIntervalRef.current) clearInterval(usageIntervalRef.current);
+      if (diskIntervalRef.current) clearInterval(diskIntervalRef.current);
+    };
+  }, [servers, getAllServersUsage, getServersDiskUsage, diskUsageGB]);
+
+  useEffect(() => {
+    const container = scrollRef.current;
+    if (!container) return;
+
+    const handleScroll = () => {
+      isScrollingRef.current = true;
+      if (scrollTimeoutRef.current) {
+        clearTimeout(scrollTimeoutRef.current);
+      }
+      scrollTimeoutRef.current = setTimeout(() => {
+        isScrollingRef.current = false;
+      }, 200);
+    };
+
+    container.addEventListener('scroll', handleScroll, { passive: true });
+    container.addEventListener('wheel', handleScroll, { passive: true });
+
+    return () => {
+      container.removeEventListener('scroll', handleScroll);
+      container.removeEventListener('wheel', handleScroll);
+      if (scrollTimeoutRef.current) {
+        clearTimeout(scrollTimeoutRef.current);
+      }
+    };
+  }, []);
 
   return (
-    <div className="h-full overflow-y-auto p-8 custom-scrollbar">
+    <div ref={scrollRef} className="h-full overflow-y-auto p-8 custom-scrollbar">
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
