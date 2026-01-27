@@ -1257,6 +1257,46 @@ const serverProcesses = new Map();
 // Track CPU usage over time for Windows (needed for accurate CPU percentage)
 const cpuUsageTracking = new Map(); // Map<serverName, { lastCpuTime: number, lastCheckTime: number }>
 
+async function waitForProcessExit(proc, timeoutMs = 10000) {
+  if (!proc || !proc.pid) return true;
+  if (proc.killed) return true;
+
+  return new Promise((resolve) => {
+    let resolved = false;
+    const timeout = setTimeout(() => {
+      if (!resolved) {
+        resolved = true;
+        resolve(false);
+      }
+    }, timeoutMs);
+
+    proc.once('exit', () => {
+      if (!resolved) {
+        resolved = true;
+        clearTimeout(timeout);
+        resolve(true);
+      }
+    });
+  });
+}
+
+function killProcessTree(pid) {
+  try {
+    if (os.platform() === 'win32') {
+      execSync(`taskkill /PID ${pid} /T /F`, { stdio: ['ignore', 'pipe', 'ignore'] });
+      return;
+    }
+  } catch (error) {
+    // Fall through to process.kill as a best effort
+  }
+
+  try {
+    process.kill(pid, 'SIGKILL');
+  } catch (error) {
+    // Ignore if process is already gone
+  }
+}
+
 // Check if a process is actually still running
 function isProcessAlive(process) {
   if (!process || !process.pid) {
@@ -1298,6 +1338,28 @@ function isProcessAlive(process) {
   }
 }
 
+function isPidAlive(pid) {
+  if (!pid) return false;
+  try {
+    if (os.platform() === 'win32') {
+      const result = execSync(`tasklist /FI "PID eq ${pid}" /FO CSV /NH`, {
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+        timeout: 2000
+      });
+      return result.trim().includes(pid.toString());
+    }
+    try {
+      process.kill(pid, 0);
+      return true;
+    } catch (error) {
+      return false;
+    }
+  } catch (error) {
+    return false;
+  }
+}
+
 // Start server
 async function startServer(serverName, ramGB = null) {
   try {
@@ -1322,6 +1384,11 @@ async function startServer(serverName, ramGB = null) {
     }
 
     // Check if already running
+    const config = await getServerConfig(serverName);
+    if (config?.pid && isPidAlive(config.pid)) {
+      return { success: false, error: 'Server is already running' };
+    }
+
     if (serverProcesses.has(serverName)) {
       const existingProcess = serverProcesses.get(serverName);
       // Check if process is still alive
@@ -1334,7 +1401,9 @@ async function startServer(serverName, ramGB = null) {
     }
 
     // Get RAM from config or use provided/default
-    const config = await getServerConfig(serverName);
+    if (config?.pid && !isPidAlive(config.pid)) {
+      await saveServerConfig(serverName, { ...config, pid: undefined, status: 'STOPPED' });
+    }
     const serverRAM = ramGB !== null ? ramGB : (config?.ramGB || 4);
     
     // Update status to STARTING
@@ -1368,7 +1437,8 @@ async function startServer(serverName, ramGB = null) {
       if (currentConfig) {
         await saveServerConfig(serverName, {
           ...currentConfig,
-          status: 'STOPPED'
+          status: 'STOPPED',
+          pid: undefined
         });
       }
     });
@@ -1380,9 +1450,17 @@ async function startServer(serverName, ramGB = null) {
       if (currentConfig) {
         await saveServerConfig(serverName, {
           ...currentConfig,
-          status: 'STOPPED'
+          status: 'STOPPED',
+          pid: undefined
         });
       }
+    });
+
+    await saveServerConfig(serverName, {
+      ...config,
+      status: 'STARTING',
+      ramGB: serverRAM,
+      pid: javaProcess.pid
     });
 
     // Update status to RUNNING after a short delay (server is starting)
@@ -1417,36 +1495,48 @@ async function stopServer(serverName) {
   try {
     const process = serverProcesses.get(serverName);
     if (!process) {
-      return { success: false, error: 'Server is not running' };
+      const config = await getServerConfig(serverName);
+      if (config?.pid && isPidAlive(config.pid)) {
+        killProcessTree(config.pid);
+        await new Promise(resolve => setTimeout(resolve, 2000));
+      }
+      if (config && config.status !== 'STOPPED') {
+        await saveServerConfig(serverName, {
+          ...config,
+          status: 'STOPPED',
+          pid: undefined
+        });
+      }
+      return { success: true };
     }
 
-    // Update status
+    // Send stop command to server
+    try {
+      if (process.stdin && process.stdin.writable) {
+        process.stdin.write('stop\n');
+      }
+    } catch (error) {
+      // Ignore if stdin is not writable
+    }
+    
+    // Force kill after 10 seconds if still running
+    const exited = await waitForProcessExit(process, 10000);
+    if (!exited) {
+      killProcessTree(process.pid);
+      await waitForProcessExit(process, 5000);
+    }
+
+    serverProcesses.delete(serverName);
+    cpuUsageTracking.delete(serverName);
+
     const config = await getServerConfig(serverName);
     if (config) {
       await saveServerConfig(serverName, {
         ...config,
-        status: 'STOPPED'
+        status: 'STOPPED',
+        pid: undefined
       });
     }
-
-    // Send stop command to server
-    process.stdin.write('stop\n');
-    
-    // Force kill after 10 seconds if still running
-    setTimeout(async () => {
-      if (serverProcesses.has(serverName)) {
-        process.kill();
-        serverProcesses.delete(serverName);
-        cpuUsageTracking.delete(serverName); // Clean up CPU tracking
-        const currentConfig = await getServerConfig(serverName);
-        if (currentConfig) {
-          await saveServerConfig(serverName, {
-            ...currentConfig,
-            status: 'STOPPED'
-          });
-        }
-      }
-    }, 10000);
 
     return { success: true };
   } catch (error) {
@@ -1503,7 +1593,7 @@ async function deleteServer(serverName) {
 
 // Cache for server usage to reduce stuttering
 const serverUsageCache = new Map(); // Map<serverName, { usage, timestamp }>
-const USAGE_CACHE_TTL = 5000; // 5 seconds cache
+const USAGE_CACHE_TTL = 1000; // 1 second cache
 
 // Get server usage (CPU, RAM) for a single server
 // Now reads from jar file config and caches results to reduce stuttering
@@ -1514,8 +1604,15 @@ async function getServerUsage(serverName) {
     const configuredRAM = config?.ramGB || 4;
     const configuredRAMMB = configuredRAM * 1024;
 
+    let pid = null;
     const process = serverProcesses.get(serverName);
-    if (!process || !process.pid) {
+    if (process?.pid) {
+      pid = process.pid;
+    } else if (config?.pid && isPidAlive(config.pid)) {
+      pid = config.pid;
+    }
+
+    if (!pid) {
       // Clear tracking if process doesn't exist
       cpuUsageTracking.delete(serverName);
       serverUsageCache.delete(serverName);
@@ -1529,42 +1626,37 @@ async function getServerUsage(serverName) {
       return { ...cached.usage, configuredRAM };
     }
 
-    const pid = process.pid;
     let cpuPercent = 0;
     let ramMB = configuredRAMMB; // Default to configured RAM
     const now = Date.now();
 
     if (os.platform() === 'win32') {
-      // Windows: Use PowerShell with proper CPU calculation
+      // Windows: Sum RAM/CPU across Java parent + child processes
       try {
-        // Get CPU time and RAM
-        const cmd = `powershell -Command "$proc = Get-Process -Id ${pid} -ErrorAction SilentlyContinue; if ($proc) { @{ CPU = $proc.CPU; WorkingSet = $proc.WorkingSet; ProcessorTime = $proc.TotalProcessorTime.TotalMilliseconds } | ConvertTo-Json }"`;
+        const cmd = `powershell -NoProfile -Command "$pids = @(${pid}); $pids += (Get-CimInstance Win32_Process -Filter \\"ParentProcessId=${pid}\\" | Select-Object -ExpandProperty ProcessId); $procs = Get-Process -Id $pids -ErrorAction SilentlyContinue; if ($procs) { $totalWorkingSet = ($procs | Measure-Object -Property WorkingSet64 -Sum).Sum; $totalCpuMs = ($procs | ForEach-Object { $_.TotalProcessorTime.TotalMilliseconds } | Measure-Object -Sum).Sum; @{ WorkingSet = $totalWorkingSet; ProcessorTime = $totalCpuMs } | ConvertTo-Json }"`;
         const output = execSync(cmd, { encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'], timeout: 3000 });
-        
+
         if (output && output.trim()) {
           const processInfo = JSON.parse(output);
-          
+
           if (processInfo) {
             ramMB = Math.round((processInfo.WorkingSet || 0) / (1024 * 1024));
-            
+
             // Calculate CPU percentage based on time difference
             const currentCpuTime = processInfo.ProcessorTime || 0;
             const tracking = cpuUsageTracking.get(serverName);
-            
+
             if (tracking && tracking.lastCheckTime) {
-              const timeDiff = (now - tracking.lastCheckTime) / 1000; // Convert to seconds
-              const cpuTimeDiff = (currentCpuTime - tracking.lastCpuTime) / 1000; // Convert to seconds
-              
+              const timeDiff = (now - tracking.lastCheckTime) / 1000; // seconds
+              const cpuTimeDiff = (currentCpuTime - tracking.lastCpuTime) / 1000; // seconds
+
               if (timeDiff > 0) {
-                // CPU percentage = (CPU time difference / time difference) * 100
-                // Divide by number of CPU cores to get percentage per core, then multiply by 100
                 const cpuCores = os.cpus().length;
                 cpuPercent = Math.min(100, (cpuTimeDiff / timeDiff / cpuCores) * 100);
-                cpuPercent = Math.max(0, cpuPercent); // Ensure non-negative
+                cpuPercent = Math.max(0, cpuPercent);
               }
             }
-            
-            // Update tracking
+
             cpuUsageTracking.set(serverName, {
               lastCpuTime: currentCpuTime,
               lastCheckTime: now
@@ -1583,42 +1675,7 @@ async function getServerUsage(serverName) {
               ramMB = Math.round(parseInt(values[2] || 0) / (1024 * 1024));
             }
           }
-          
-          // Try to get CPU using wmic (cumulative CPU time)
-          try {
-            const cpuCmd = `wmic process where ProcessId=${pid} get KernelModeTime,UserModeTime /format:csv`;
-            const cpuOutput = execSync(cpuCmd, { encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'], timeout: 3000 });
-            const cpuLines = cpuOutput.split('\n').filter(l => l.trim() && !l.startsWith('Node'));
-            if (cpuLines.length > 0) {
-              const cpuValues = cpuLines[0].split(',');
-              if (cpuValues.length >= 3) {
-                const kernelTime = parseInt(cpuValues[1] || 0);
-                const userTime = parseInt(cpuValues[2] || 0);
-                const totalCpuTime = (kernelTime + userTime) / 10000; // Convert 100-nanosecond intervals to milliseconds
-                
-                const tracking = cpuUsageTracking.get(serverName);
-                if (tracking && tracking.lastCheckTime) {
-                  const timeDiff = (now - tracking.lastCheckTime) / 1000;
-                  const cpuTimeDiff = (totalCpuTime - tracking.lastCpuTime) / 1000;
-                  
-                  if (timeDiff > 0) {
-                    const cpuCores = os.cpus().length;
-                    cpuPercent = Math.min(100, (cpuTimeDiff / timeDiff / cpuCores) * 100);
-                    cpuPercent = Math.max(0, cpuPercent);
-                  }
-                }
-                
-                cpuUsageTracking.set(serverName, {
-                  lastCpuTime: totalCpuTime,
-                  lastCheckTime: now
-                });
-              }
-            }
-          } catch (cpuError) {
-            // CPU calculation failed, but we have RAM
-          }
         } catch (wmicError) {
-          // If both fail, use configured RAM
           ramMB = configuredRAMMB;
         }
       }
@@ -1747,8 +1804,8 @@ async function restartServer(serverName, ramGB = null) {
       return { success: false, error: `Failed to stop server: ${stopResult.error}` };
     }
 
-    // Wait a moment for clean shutdown
-    await new Promise(resolve => setTimeout(resolve, 2000));
+    // Small delay to ensure file locks are released
+    await new Promise(resolve => setTimeout(resolve, 1000));
 
     // Start the server
     const startResult = await startServer(serverName, ramGB);
@@ -1763,11 +1820,24 @@ async function killServer(serverName) {
   try {
     const process = serverProcesses.get(serverName);
     if (!process) {
-      return { success: false, error: 'Server is not running' };
+      const config = await getServerConfig(serverName);
+      if (config?.pid && isPidAlive(config.pid)) {
+        killProcessTree(config.pid);
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+      if (config && config.status !== 'STOPPED') {
+        await saveServerConfig(serverName, {
+          ...config,
+          status: 'STOPPED',
+          pid: undefined
+        });
+      }
+      return { success: true };
     }
 
     // Force kill immediately
-    process.kill('SIGKILL');
+    killProcessTree(process.pid);
+    await waitForProcessExit(process, 5000);
     serverProcesses.delete(serverName);
     cpuUsageTracking.delete(serverName); // Clean up CPU tracking
 
@@ -1776,7 +1846,8 @@ async function killServer(serverName) {
     if (config) {
       await saveServerConfig(serverName, {
         ...config,
-        status: 'STOPPED'
+        status: 'STOPPED',
+        pid: undefined
       });
     }
 
@@ -1879,7 +1950,10 @@ async function listServers() {
         
         if (jarFile) {
           const config = configs[serverName];
-          const isRunning = serverProcesses.has(serverName);
+          let isRunning = serverProcesses.has(serverName);
+          if (!isRunning && config?.pid && isPidAlive(config.pid)) {
+            isRunning = true;
+          }
           
           // Determine status: check process first, then config
           let status = 'STOPPED';
@@ -1896,10 +1970,17 @@ async function listServers() {
               if (config) {
                 await saveServerConfig(serverName, {
                   ...config,
-                  status: 'STOPPED'
+                  status: 'STOPPED',
+                  pid: undefined
                 });
               }
             }
+          } else if (config?.pid && !isPidAlive(config.pid)) {
+            await saveServerConfig(serverName, {
+              ...config,
+              status: 'STOPPED',
+              pid: undefined
+            });
           } else if (config && config.status === 'STARTING') {
             status = 'STARTING';
           } else if (config) {
@@ -1911,7 +1992,8 @@ async function listServers() {
             status = 'STOPPED';
             await saveServerConfig(serverName, {
               ...config,
-              status: 'STOPPED'
+              status: 'STOPPED',
+              pid: undefined
             });
           }
           

@@ -4,6 +4,7 @@ import ServerCard from "./ServerCard";
 import { useServerManager } from "../hooks/useServerManager";
 import JavaStatusIndicator from "./JavaStatusIndicator";
 import CreateServerButton from "./CreateServerButton";
+import { useToast } from "./ToastProvider";
 
 interface ServerListProps {
   onServerClick?: (serverName: string) => void;
@@ -11,6 +12,7 @@ interface ServerListProps {
 
 export default function ServerList({ onServerClick }: ServerListProps) {
   const { servers, startServer, stopServer, loading, getAllServersUsage, getServersDiskUsage } = useServerManager();
+  const { notify } = useToast();
   const [aggregateStats, setAggregateStats] = useState<{
     totalCPU: number;
     totalRAM: number;
@@ -23,14 +25,22 @@ export default function ServerList({ onServerClick }: ServerListProps) {
     const ramGB = server?.ramGB || 4;
     const result = await startServer(serverName, ramGB);
     if (!result.success) {
-      alert(`Failed to start server: ${result.error}`);
+      notify({
+        type: "error",
+        title: "Start failed",
+        message: result.error || "Unable to start the server."
+      });
     }
   };
 
   const handleStop = async (serverName: string) => {
     const result = await stopServer(serverName);
     if (!result.success) {
-      alert(`Failed to stop server: ${result.error}`);
+      notify({
+        type: "error",
+        title: "Stop failed",
+        message: result.error || "Unable to stop the server."
+      });
     }
   };
 
@@ -62,7 +72,7 @@ export default function ServerList({ onServerClick }: ServerListProps) {
     };
 
     loadStats();
-    const interval = setInterval(loadStats, 5000); // Update every 5 seconds
+    const interval = setInterval(loadStats, 2000); // Update every 2 seconds
     return () => clearInterval(interval);
   }, [servers, getAllServersUsage, getServersDiskUsage]);
 
