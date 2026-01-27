@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
+import { useToast } from "./ToastProvider";
 
 interface PluginManagerProps {
   serverName: string;
@@ -31,6 +32,7 @@ export default function PluginManager({ serverName }: PluginManagerProps) {
   const [supportsPlugins, setSupportsPlugins] = useState<boolean | null>(null);
   const [minecraftVersion, setMinecraftVersion] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const { notify } = useToast();
 
   useEffect(() => {
     checkPluginSupport();
@@ -137,10 +139,18 @@ export default function PluginManager({ serverName }: PluginManagerProps) {
       if (result.success) {
         await loadPlugins();
       } else {
-        alert(`Failed to delete plugin: ${result.error}`);
+        notify({
+          type: "error",
+          title: "Delete failed",
+          message: result.error || "Unable to delete the plugin."
+        });
       }
     } catch (error: any) {
-      alert(`Error deleting plugin: ${error.message}`);
+      notify({
+        type: "error",
+        title: "Delete failed",
+        message: error.message || "Unable to delete the plugin."
+      });
     } finally {
       setDeleting(null);
     }
@@ -148,12 +158,20 @@ export default function PluginManager({ serverName }: PluginManagerProps) {
 
   const handleInstall = async (projectId: string, pluginTitle: string) => {
     if (!window.electronAPI || !minecraftVersion) {
-      alert('Unable to install: Minecraft version not available');
+      notify({
+        type: "error",
+        title: "Install failed",
+        message: "Minecraft version not available."
+      });
       return;
     }
 
     if (!window.electronAPI.server.installModrinthPlugin) {
-      alert('Install function not available. Please restart the app.');
+      notify({
+        type: "error",
+        title: "Install unavailable",
+        message: "Install function not available. Please restart the app."
+      });
       return;
     }
 
@@ -161,13 +179,25 @@ export default function PluginManager({ serverName }: PluginManagerProps) {
     try {
       const result = await window.electronAPI.server.installModrinthPlugin(serverName, projectId, minecraftVersion);
       if (result.success) {
-        alert(`Successfully installed ${pluginTitle}!`);
+        notify({
+          type: "success",
+          title: "Plugin installed",
+          message: `${pluginTitle} is ready.`
+        });
         await loadPlugins(); // Refresh installed plugins list
       } else {
-        alert(`Failed to install plugin: ${result.error}`);
+        notify({
+          type: "error",
+          title: "Install failed",
+          message: result.error || "Unable to install the plugin."
+        });
       }
     } catch (error: any) {
-      alert(`Error installing plugin: ${error.message}`);
+      notify({
+        type: "error",
+        title: "Install failed",
+        message: error.message || "Unable to install the plugin."
+      });
     } finally {
       setInstalling(null);
     }

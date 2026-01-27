@@ -32,6 +32,7 @@ export default function ConsolePanel({ selectedServer: propSelectedServer }: Con
   const scrollTimeoutRef = useRef<NodeJS.Timeout>();
   const lastScrollTopRef = useRef<number>(0);
   const userScrolledRef = useRef<boolean>(false);
+  const logBufferRef = useRef<string>("");
   
   // Use prop if provided, otherwise use internal state
   const selectedServer = propSelectedServer !== undefined ? propSelectedServer : internalSelectedServer;
@@ -77,22 +78,24 @@ export default function ConsolePanel({ selectedServer: propSelectedServer }: Con
 
     const handleLog = (data: { serverName: string; type: 'stdout' | 'stderr'; data: string }) => {
       if (data.serverName === selectedServer) {
-        const logLines = data.data.split('\n');
-        logLines.forEach((line, index) => {
-          if (line.trim() || index === logLines.length - 1) {
-            const newLine: ConsoleLine = {
-              id: Date.now().toString() + Math.random() + index,
-              text: line || ' ',
-              timestamp: new Date().toLocaleTimeString(),
-              type: data.type,
-            };
-            setLines(prev => {
-              // Limit to maxConsoleLines from settings (default 1000)
-              const maxLines = settings?.maxConsoleLines || 1000;
-              const newLines = [...prev, newLine];
-              return newLines.slice(-maxLines);
-            });
-          }
+        const buffered = logBufferRef.current + data.data;
+        const parts = buffered.split('\n');
+        logBufferRef.current = parts.pop() ?? "";
+
+        if (parts.length === 0) return;
+
+        const timestamp = new Date().toLocaleTimeString();
+        const newLines = parts.map((line, index) => ({
+          id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${index}`,
+          text: line,
+          timestamp,
+          type: data.type,
+        }));
+
+        setLines(prev => {
+          const maxLines = settings?.maxConsoleLines || 1000;
+          const merged = [...prev, ...newLines];
+          return merged.slice(-maxLines);
         });
       }
     };

@@ -7,6 +7,7 @@ interface SetupOptionsViewProps {
 
 export default function SetupOptionsView({ onComplete }: SetupOptionsViewProps) {
   const [completing, setCompleting] = useState(false);
+  const [completingStatus, setCompletingStatus] = useState("Saving setup...");
   const [serversPath, setServersPath] = useState("");
   const [backupsPath, setBackupsPath] = useState("");
   const [showBootSequence, setShowBootSequence] = useState(true);
@@ -16,7 +17,19 @@ export default function SetupOptionsView({ onComplete }: SetupOptionsViewProps) 
   const [backupInterval, setBackupInterval] = useState(24);
   const [maxBackups, setMaxBackups] = useState(10);
   const [defaultRAM, setDefaultRAM] = useState(4);
+  const [defaultPort, setDefaultPort] = useState(25565);
   const [maxRAM, setMaxRAM] = useState(32); // Default, will be updated from system
+  const [stepIndex, setStepIndex] = useState(0);
+  const [quickStartEnabled, setQuickStartEnabled] = useState(true);
+  const [quickStartName, setQuickStartName] = useState("My First Server");
+  const [quickStartType, setQuickStartType] = useState<"paper" | "vanilla">("paper");
+  const [quickStartVersion, setQuickStartVersion] = useState<string | null>(null);
+  const [quickStartVersions, setQuickStartVersions] = useState<string[]>([]);
+  const [quickStartLoading, setQuickStartLoading] = useState(false);
+  const [quickStartError, setQuickStartError] = useState<string | null>(null);
+  const [quickStartRAM, setQuickStartRAM] = useState(4);
+  const [quickStartRamTouched, setQuickStartRamTouched] = useState(false);
+  const [quickStartStartNow, setQuickStartStartNow] = useState(true);
   const [notifications, setNotifications] = useState({
     statusChanges: true,
     crashes: true,
@@ -33,7 +46,27 @@ export default function SetupOptionsView({ onComplete }: SetupOptionsViewProps) 
     if (defaultRAM > maxRAM && maxRAM > 0) {
       setDefaultRAM(maxRAM);
     }
+    if (quickStartRAM > maxRAM && maxRAM > 0) {
+      setQuickStartRAM(maxRAM);
+    }
   }, [maxRAM]);
+
+  useEffect(() => {
+    if (!quickStartEnabled) {
+      setQuickStartRamTouched(false);
+      setQuickStartRAM(defaultRAM);
+      return;
+    }
+    if (!quickStartRamTouched) {
+      setQuickStartRAM(defaultRAM);
+    }
+  }, [defaultRAM, quickStartEnabled, quickStartRamTouched]);
+
+  useEffect(() => {
+    if (quickStartEnabled) {
+      loadQuickStartVersions();
+    }
+  }, [quickStartEnabled, quickStartType]);
 
   const loadSystemRAM = async () => {
     if (!window.electronAPI) return;
@@ -63,6 +96,8 @@ export default function SetupOptionsView({ onComplete }: SetupOptionsViewProps) 
       setBackupInterval(settings.backupInterval || 24);
       setMaxBackups(settings.maxBackups || 10);
       setDefaultRAM(settings.defaultRAM || 4);
+      setDefaultPort(settings.defaultPort || 25565);
+      setQuickStartRAM(settings.defaultRAM || 4);
       setNotifications(settings.notifications || {
         statusChanges: true,
         crashes: true,
@@ -101,6 +136,8 @@ export default function SetupOptionsView({ onComplete }: SetupOptionsViewProps) 
     }
 
     setCompleting(true);
+    setCompletingStatus("Saving setup...");
+    setQuickStartError(null);
     try {
       const settings = {
         serversDirectory: serversPath || undefined, // Will use default if empty
@@ -112,10 +149,62 @@ export default function SetupOptionsView({ onComplete }: SetupOptionsViewProps) 
         backupInterval,
         maxBackups,
         defaultRAM,
+        defaultPort,
         notifications
       };
 
       await window.electronAPI.server.completeSetup(settings);
+
+      if (quickStartEnabled) {
+        setCompletingStatus("Preparing starter server...");
+        const trimmedName = quickStartName.trim();
+        if (!trimmedName) {
+          setQuickStartError("Please enter a server name for quick start.");
+          return;
+        }
+        if (defaultPort < 1024 || defaultPort > 65535) {
+          setQuickStartError("Please set a valid default port (1024-65535).");
+          return;
+        }
+
+        const sanitizedName = trimmedName.replace(/\s+/g, '-');
+        setCompletingStatus("Creating server files...");
+        let quickStartPort = defaultPort;
+        if (window.electronAPI?.server?.findAvailablePort) {
+          const resolvedPort = await window.electronAPI.server.findAvailablePort(defaultPort);
+          if (resolvedPort) {
+            quickStartPort = resolvedPort;
+            if (resolvedPort !== defaultPort) {
+              setCompletingStatus(`Port ${defaultPort} in use. Using ${resolvedPort}...`);
+            }
+          }
+        }
+        const createResult = await window.electronAPI.server.createServer(
+          sanitizedName,
+          quickStartType,
+          quickStartVersion,
+          quickStartRAM,
+          quickStartPort,
+          null,
+          trimmedName
+        );
+
+        if (!createResult.success) {
+          setQuickStartError(createResult.error || "Failed to create the starter server.");
+          return;
+        }
+
+        if (quickStartStartNow) {
+          setCompletingStatus("Starting server...");
+          const startResult = await window.electronAPI.server.startServer(sanitizedName, quickStartRAM);
+          if (!startResult.success) {
+            setQuickStartError(startResult.error || "Starter server created, but failed to start.");
+            return;
+          }
+        }
+      }
+
+      setCompletingStatus("Finalizing...");
       onComplete();
     } catch (error) {
       console.error('Failed to complete setup:', error);
@@ -129,6 +218,41 @@ export default function SetupOptionsView({ onComplete }: SetupOptionsViewProps) 
     setNotifications(prev => ({ ...prev, [key]: value }));
   };
 
+  const loadQuickStartVersions = async () => {
+    if (!window.electronAPI) return;
+    setQuickStartLoading(true);
+    setQuickStartError(null);
+    try {
+      const versions = quickStartType === "paper"
+        ? await window.electronAPI.server.getPaperVersions()
+        : await window.electronAPI.server.getVanillaVersions();
+      setQuickStartVersions(versions);
+      setQuickStartVersion(versions[0] || null);
+    } catch (error) {
+      setQuickStartVersions([]);
+      setQuickStartVersion(null);
+      setQuickStartError("Failed to load server versions.");
+    } finally {
+      setQuickStartLoading(false);
+    }
+  };
+
+  const steps = [
+    { key: "storage", title: "Storage Locations" },
+    { key: "defaults", title: "Default Server Settings" },
+    { key: "quickstart", title: "Quick Start" },
+    { key: "behavior", title: "Application Behavior" },
+    { key: "notifications", title: "Notifications" }
+  ];
+
+  const handleNextStep = () => {
+    setStepIndex((prev) => Math.min(prev + 1, steps.length - 1));
+  };
+
+  const handlePrevStep = () => {
+    setStepIndex((prev) => Math.max(prev - 1, 0));
+  };
+
   return (
     <motion.div
       initial={{ opacity: 0 }}
@@ -136,6 +260,14 @@ export default function SetupOptionsView({ onComplete }: SetupOptionsViewProps) 
       exit={{ opacity: 0 }}
       className="h-screen w-screen flex items-center justify-center bg-background p-8 overflow-hidden"
     >
+      {completing && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-background/70 backdrop-blur-sm">
+          <div className="flex items-center gap-3 text-text-primary font-mono text-sm">
+            <div className="h-5 w-5 rounded-full border-2 border-accent border-t-transparent animate-spin"></div>
+            {completingStatus}
+          </div>
+        </div>
+      )}
       <motion.div
         className="relative border border-border bg-background-secondary p-8 max-w-2xl w-full max-h-[90vh] flex flex-col rounded"
         whileHover={{ 
@@ -156,6 +288,15 @@ export default function SetupOptionsView({ onComplete }: SetupOptionsViewProps) 
           </p>
         </div>
 
+        <div className="mb-6 border border-border rounded p-4">
+          <div className="text-xs font-mono uppercase tracking-wider text-text-muted mb-3">
+            Step {stepIndex + 1} of {steps.length}
+          </div>
+          <div className="text-sm font-mono text-text-primary">
+            {steps[stepIndex].title}
+          </div>
+        </div>
+
         <div 
           className="flex-1 mb-6 space-y-6 custom-scrollbar"
           style={{ 
@@ -166,6 +307,7 @@ export default function SetupOptionsView({ onComplete }: SetupOptionsViewProps) 
         >
 
           {/* Storage Locations */}
+          {stepIndex === 0 && (
           <div className="border border-border rounded p-4">
             <h3 className="text-sm font-semibold text-text-primary font-mono mb-3 uppercase tracking-wider">
               Storage Locations
@@ -194,8 +336,10 @@ export default function SetupOptionsView({ onComplete }: SetupOptionsViewProps) 
               </div>
             </div>
           </div>
+          )}
 
           {/* Default Server Settings */}
+          {stepIndex === 1 && (
           <div className="border border-border rounded p-4">
             <h3 className="text-sm font-semibold text-text-primary font-mono mb-3 uppercase tracking-wider">
               Default Server Settings
@@ -230,6 +374,18 @@ export default function SetupOptionsView({ onComplete }: SetupOptionsViewProps) 
                   <span>{maxRAM}GB</span>
                 </div>
                 <p className="text-xs text-text-muted mt-1">Default RAM for new servers</p>
+              </div>
+              <div>
+                <label className="block mb-2 text-text-primary">Default Port</label>
+                <input
+                  type="number"
+                  min="1024"
+                  max="65535"
+                  value={defaultPort}
+                  onChange={(e) => setDefaultPort(parseInt(e.target.value) || 0)}
+                  className="w-full bg-background border border-border px-3 py-2 text-text-primary font-mono text-sm focus:outline-none focus:border-accent/50 rounded"
+                />
+                <p className="text-xs text-text-muted mt-1">Default port for new servers (1024-65535)</p>
               </div>
               <div className="flex items-center justify-between">
                 <div>
@@ -293,8 +449,129 @@ export default function SetupOptionsView({ onComplete }: SetupOptionsViewProps) 
               )}
             </div>
           </div>
+          )}
+
+          {/* Quick Start */}
+          {stepIndex === 2 && (
+          <div className="border border-border rounded p-4">
+            <h3 className="text-sm font-semibold text-text-primary font-mono mb-3 uppercase tracking-wider">
+              Quick Start (Recommended)
+            </h3>
+            <div className="space-y-4 text-text-secondary font-mono text-sm">
+              <div className="flex items-center justify-between">
+                <div>
+                  <span>Create a starter server now</span>
+                  <p className="text-xs text-text-muted">Skip the empty dashboard and launch instantly</p>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={quickStartEnabled}
+                  onChange={(e) => setQuickStartEnabled(e.target.checked)}
+                  className="w-4 h-4 accent-accent cursor-pointer"
+                />
+              </div>
+
+              {quickStartEnabled && (
+                <div className="space-y-3 border-t border-border pt-4">
+                  <div>
+                    <label className="block mb-2 text-text-primary">Server Name</label>
+                    <input
+                      type="text"
+                      value={quickStartName}
+                      onChange={(e) => setQuickStartName(e.target.value)}
+                      className="w-full bg-background border border-border px-3 py-2 text-text-primary font-mono text-sm focus:outline-none focus:border-accent/50 rounded"
+                      placeholder="My First Server"
+                    />
+                  </div>
+                  <div>
+                    <label className="block mb-2 text-text-primary">Server Type</label>
+                    <select
+                      value={quickStartType}
+                      onChange={(e) => setQuickStartType(e.target.value as "paper" | "vanilla")}
+                      className="w-full bg-background border border-border px-3 py-2 text-text-primary font-mono text-sm focus:outline-none focus:border-accent/50 rounded"
+                    >
+                      <option value="paper">Paper (recommended)</option>
+                      <option value="vanilla">Vanilla</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block mb-2 text-text-primary">Version</label>
+                    <div className="flex items-center gap-2">
+                      <select
+                        value={quickStartVersion || ""}
+                        onChange={(e) => setQuickStartVersion(e.target.value || null)}
+                        className="flex-1 bg-background border border-border px-3 py-2 text-text-primary font-mono text-sm focus:outline-none focus:border-accent/50 rounded"
+                        disabled={quickStartLoading || quickStartVersions.length === 0}
+                      >
+                        {quickStartVersions.length === 0 && (
+                          <option value="">Latest</option>
+                        )}
+                        {quickStartVersions.map((version) => (
+                          <option key={version} value={version}>
+                            {version}
+                          </option>
+                        ))}
+                      </select>
+                      {quickStartLoading && (
+                        <span className="text-xs text-text-muted">Loading...</span>
+                      )}
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block mb-2 text-text-primary">Starter Server RAM: {quickStartRAM} GB</label>
+                    <div className="flex items-center gap-4 relative">
+                      <div className="flex-1 relative h-2">
+                        <div 
+                          className="absolute inset-y-0 left-0 h-2 bg-accent rounded-l-lg pointer-events-none"
+                          style={{ 
+                            width: `min(calc(${(quickStartRAM / maxRAM) * 100}% - 9px), calc(100% - 18px))`, 
+                            zIndex: 1
+                          }}
+                        ></div>
+                        <input
+                          type="range"
+                          min="1"
+                          max={maxRAM}
+                          value={quickStartRAM}
+                          onChange={(e) => {
+                            setQuickStartRAM(parseInt(e.target.value));
+                            setQuickStartRamTouched(true);
+                          }}
+                          className="absolute inset-0 w-full h-2 appearance-none cursor-pointer slider-custom bg-transparent"
+                          style={{ zIndex: 5 }}
+                        />
+                      </div>
+                    </div>
+                    <div className="flex justify-between text-xs text-text-muted font-mono mt-1">
+                      <span>1GB</span>
+                      <span>{maxRAM}GB</span>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span>Start server after setup</span>
+                      <p className="text-xs text-text-muted">Launch immediately with the RAM set above</p>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={quickStartStartNow}
+                      onChange={(e) => setQuickStartStartNow(e.target.checked)}
+                      className="w-4 h-4 accent-accent cursor-pointer"
+                    />
+                  </div>
+                  {quickStartError && (
+                    <div className="text-xs text-red-400 border border-red-500/30 bg-red-500/10 px-3 py-2 rounded">
+                      {quickStartError}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+          )}
 
           {/* Application Behavior */}
+          {stepIndex === 3 && (
           <div className="border border-border rounded p-4">
             <h3 className="text-sm font-semibold text-text-primary font-mono mb-3 uppercase tracking-wider">
               Application Behavior
@@ -338,8 +615,10 @@ export default function SetupOptionsView({ onComplete }: SetupOptionsViewProps) 
               </div>
             </div>
           </div>
+          )}
 
           {/* Notifications */}
+          {stepIndex === 4 && (
           <div className="border border-border rounded p-4">
             <h3 className="text-sm font-semibold text-text-primary font-mono mb-3 uppercase tracking-wider">
               Notifications
@@ -383,18 +662,40 @@ export default function SetupOptionsView({ onComplete }: SetupOptionsViewProps) 
               </div>
             </div>
           </div>
+          )}
         </div>
 
-        <div className="flex justify-end flex-shrink-0 pt-4 border-t border-border">
+        <div className="flex justify-between flex-shrink-0 pt-4 border-t border-border">
           <motion.button
-            onClick={handleComplete}
-            disabled={completing}
-            className="btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
-            whileHover={{ scale: completing ? 1 : 1.02 }}
-            whileTap={{ scale: completing ? 1 : 0.98 }}
+            onClick={handlePrevStep}
+            disabled={stepIndex === 0 || completing}
+            className="btn-secondary disabled:opacity-50 disabled:cursor-not-allowed"
+            whileHover={{ scale: stepIndex === 0 || completing ? 1 : 1.02 }}
+            whileTap={{ scale: stepIndex === 0 || completing ? 1 : 0.98 }}
           >
-            {completing ? "COMPLETING..." : "FINISH SETUP"}
+            BACK
           </motion.button>
+          {stepIndex < steps.length - 1 ? (
+            <motion.button
+              onClick={handleNextStep}
+              disabled={completing}
+              className="btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
+              whileHover={{ scale: completing ? 1 : 1.02 }}
+              whileTap={{ scale: completing ? 1 : 0.98 }}
+            >
+              NEXT
+            </motion.button>
+          ) : (
+            <motion.button
+              onClick={handleComplete}
+              disabled={completing}
+              className="btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
+              whileHover={{ scale: completing ? 1 : 1.02 }}
+              whileTap={{ scale: completing ? 1 : 0.98 }}
+            >
+              {completing ? "COMPLETING..." : "FINISH SETUP"}
+            </motion.button>
+          )}
         </div>
       </motion.div>
     </motion.div>

@@ -39,6 +39,8 @@ export default function SetupView({ onNext }: SetupViewProps) {
   const [loading, setLoading] = useState(true);
   const [javaStatus, setJavaStatus] = useState<{ installed: boolean; version: string | null } | null>(null);
   const [showJavaWarning, setShowJavaWarning] = useState(false);
+  const [scanStepIndex, setScanStepIndex] = useState(0);
+  const [scanComplete, setScanComplete] = useState(false);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const isScrollingRef = useRef(false);
   const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -126,6 +128,36 @@ export default function SetupView({ onNext }: SetupViewProps) {
     };
   }, []);
 
+  useEffect(() => {
+    if (!systemInfo) return;
+    if (scanComplete) return;
+
+    const steps = [
+      "Detecting CPU",
+      "Detecting Memory",
+      "Detecting Storage",
+      "Checking Java Runtime",
+      "Finalizing"
+    ];
+
+    // Pause on Java step if Java is missing
+    const isJavaStep = scanStepIndex >= 3;
+    if (isJavaStep && !javaStatus?.installed) {
+      return;
+    }
+
+    if (scanStepIndex >= steps.length - 1) {
+      setScanComplete(true);
+      return;
+    }
+
+    const timeout = setTimeout(() => {
+      setScanStepIndex((prev) => Math.min(prev + 1, steps.length - 1));
+    }, 900);
+
+    return () => clearTimeout(timeout);
+  }, [systemInfo, javaStatus, scanStepIndex, scanComplete]);
+
   const loadSystemInfo = async () => {
     if (!window.electronAPI) {
       setLoading(false);
@@ -179,6 +211,14 @@ export default function SetupView({ onNext }: SetupViewProps) {
     );
   }
 
+  const scanSteps = [
+    { key: "cpu", label: "Detecting CPU" },
+    { key: "memory", label: "Detecting Memory" },
+    { key: "storage", label: "Detecting Storage" },
+    { key: "java", label: "Checking Java Runtime" },
+    { key: "final", label: "Finalizing" }
+  ];
+
   return (
     <motion.div
       initial={{ opacity: 0 }}
@@ -206,6 +246,38 @@ export default function SetupView({ onNext }: SetupViewProps) {
           </p>
         </div>
 
+        <div className="mb-6 border border-border rounded p-4">
+          <div className="text-xs font-mono uppercase tracking-wider text-text-muted mb-3">
+            System Scan
+          </div>
+          <div className="space-y-2">
+            {scanSteps.map((step, index) => {
+              const isActive = index === scanStepIndex;
+              const isDone = index < scanStepIndex || scanComplete;
+              const isJavaBlocked = step.key === "java" && !javaStatus?.installed && index <= scanStepIndex;
+
+              return (
+                <div
+                  key={step.key}
+                  className={`flex items-center justify-between text-sm font-mono ${
+                    isJavaBlocked ? "text-red-300" : isDone ? "text-accent" : isActive ? "text-text-primary" : "text-text-muted"
+                  }`}
+                >
+                  <span className="flex items-center gap-2">
+                    <span className={`h-2 w-2 rounded-full ${
+                      isJavaBlocked ? "bg-red-400" : isDone ? "bg-accent" : isActive ? "bg-text-primary" : "bg-border"
+                    }`} />
+                    {step.label}
+                  </span>
+                  <span className="text-xs">
+                    {isJavaBlocked ? "Action needed" : isDone ? "Done" : isActive ? "Running..." : "Queued"}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
         {systemInfo && (
           <div 
             ref={scrollContainerRef}
@@ -218,7 +290,12 @@ export default function SetupView({ onNext }: SetupViewProps) {
             }}
           >
             {/* CPU Info */}
-            <div className="border border-border rounded p-4">
+            <motion.div
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: scanStepIndex > 0 || scanComplete ? 1 : 0, y: scanStepIndex > 0 || scanComplete ? 0 : 12 }}
+              transition={{ type: "spring", stiffness: 120, damping: 18 }}
+              className="border border-border rounded p-4"
+            >
               <h3 className="text-sm font-semibold text-text-primary font-mono mb-3 uppercase tracking-wider">
                 Processor
               </h3>
@@ -236,10 +313,15 @@ export default function SetupView({ onNext }: SetupViewProps) {
                   <span className="text-text-primary">{systemInfo.cpu.threads}</span>
                 </div>
               </div>
-            </div>
+            </motion.div>
 
             {/* Memory Info */}
-            <div className="border border-border rounded p-4">
+            <motion.div
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: scanStepIndex > 1 || scanComplete ? 1 : 0, y: scanStepIndex > 1 || scanComplete ? 0 : 12 }}
+              transition={{ type: "spring", stiffness: 120, damping: 18 }}
+              className="border border-border rounded p-4"
+            >
               <h3 className="text-sm font-semibold text-text-primary font-mono mb-3 uppercase tracking-wider">
                 Memory
               </h3>
@@ -271,11 +353,16 @@ export default function SetupView({ onNext }: SetupViewProps) {
                   </div>
                 </div>
               </div>
-            </div>
+            </motion.div>
 
             {/* Storage Info - Individual Drives */}
             {systemInfo.drives && systemInfo.drives.length > 0 && (
-              <div className="border border-border rounded p-4">
+              <motion.div
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: scanStepIndex > 2 || scanComplete ? 1 : 0, y: scanStepIndex > 2 || scanComplete ? 0 : 12 }}
+                transition={{ type: "spring", stiffness: 120, damping: 18 }}
+                className="border border-border rounded p-4"
+              >
                 <h3 className="text-sm font-semibold text-text-primary font-mono mb-3 uppercase tracking-wider">
                   Storage
                 </h3>
@@ -321,11 +408,16 @@ export default function SetupView({ onNext }: SetupViewProps) {
                     </div>
                   ))}
                 </div>
-              </div>
+              </motion.div>
             )}
 
             {/* Java Info */}
-            <div className="border border-border rounded p-4">
+            <motion.div
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: scanStepIndex >= 3 ? 1 : 0, y: scanStepIndex >= 3 ? 0 : 12 }}
+              transition={{ type: "spring", stiffness: 120, damping: 18 }}
+              className="border border-border rounded p-4"
+            >
               <h3 className="text-sm font-semibold text-text-primary font-mono mb-3 uppercase tracking-wider">
                 Java Runtime
               </h3>
@@ -360,10 +452,15 @@ export default function SetupView({ onNext }: SetupViewProps) {
                   </div>
                 )}
               </div>
-            </div>
+            </motion.div>
 
             {/* System Info */}
-            <div className="border border-border rounded p-4">
+            <motion.div
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: scanComplete ? 1 : 0, y: scanComplete ? 0 : 12 }}
+              transition={{ type: "spring", stiffness: 120, damping: 18 }}
+              className="border border-border rounded p-4"
+            >
               <h3 className="text-sm font-semibold text-text-primary font-mono mb-3 uppercase tracking-wider">
                 System
               </h3>
@@ -381,14 +478,15 @@ export default function SetupView({ onNext }: SetupViewProps) {
                   <span className="text-text-primary">{systemInfo.hostname}</span>
                 </div>
               </div>
-            </div>
+            </motion.div>
           </div>
         )}
 
         <div className="flex justify-end flex-shrink-0 pt-4 border-t border-border">
           <motion.button
             onClick={handleNext}
-            className="btn-primary"
+            disabled={!scanComplete || !javaStatus?.installed}
+            className="btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
           >

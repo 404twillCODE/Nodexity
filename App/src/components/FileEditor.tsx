@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
+import { useToast } from "./ToastProvider";
 
 interface FileEditorProps {
   serverName: string;
@@ -21,6 +22,7 @@ export default function FileEditor({ serverName }: FileEditorProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const { notify } = useToast();
 
   useEffect(() => {
     loadFiles();
@@ -69,12 +71,24 @@ export default function FileEditor({ serverName }: FileEditorProps) {
       const result = await window.electronAPI.server.writeServerFile(serverName, selectedFile, fileContent);
       if (result.success) {
         setIsEditing(false);
-        alert('File saved successfully');
+        notify({
+          type: "success",
+          title: "File saved",
+          message: "Changes have been written to disk."
+        });
       } else {
-        alert(`Failed to save file: ${result.error}`);
+        notify({
+          type: "error",
+          title: "Save failed",
+          message: result.error || "Unable to save the file."
+        });
       }
     } catch (error: any) {
-      alert(`Error saving file: ${error.message}`);
+      notify({
+        type: "error",
+        title: "Save failed",
+        message: error.message || "Unable to save the file."
+      });
     } finally {
       setSaving(false);
     }

@@ -8,6 +8,7 @@ import ServerList from "./components/ServerList";
 import ServerDetailView from "./components/ServerDetailView";
 import SettingsView from "./components/SettingsView";
 import TitleBar from "./components/TitleBar";
+import { ToastProvider } from "./components/ToastProvider";
 
 type View = "servers" | "settings" | "server-detail";
 type SetupStep = "boot" | "detection" | "options" | "complete";
@@ -121,37 +122,39 @@ function App() {
 
   // Show boot sequence, then main app (for completed setup)
   return (
-    <div className="h-screen w-screen flex flex-col bg-background overflow-hidden">
-      <BootSequence onComplete={handleBootComplete} />
-      <AnimatePresence>
-        {bootComplete && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.5 }}
-            className="flex flex-col h-full"
-          >
-            <TitleBar />
-            <div className="flex flex-1 overflow-hidden">
-              {currentView !== "server-detail" && (
-                <Sidebar currentView={currentView as "servers" | "settings"} onViewChange={setCurrentView} />
-              )}
-              <motion.main
-                key={currentView + (selectedServer || '')}
-                initial={{ opacity: 0, x: 20 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -20 }}
-                transition={{ type: "spring", stiffness: 100, damping: 15 }}
-                className="flex-1 overflow-hidden"
-              >
-                {renderView()}
-              </motion.main>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
+    <ToastProvider>
+      <div className="h-screen w-screen flex flex-col bg-background overflow-hidden">
+        <BootSequence onComplete={handleBootComplete} />
+        <AnimatePresence>
+          {bootComplete && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.5 }}
+              className="flex flex-col h-full"
+            >
+              <TitleBar />
+              <div className="flex flex-1 overflow-hidden">
+                {currentView !== "server-detail" && (
+                  <Sidebar currentView={currentView as "servers" | "settings"} onViewChange={setCurrentView} />
+                )}
+                <motion.main
+                  key={currentView + (selectedServer || '')}
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -20 }}
+                  transition={{ type: "spring", stiffness: 100, damping: 15 }}
+                  className="flex-1 overflow-hidden"
+                >
+                  {renderView()}
+                </motion.main>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+    </ToastProvider>
   );
 }
 

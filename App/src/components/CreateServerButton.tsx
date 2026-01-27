@@ -5,7 +5,7 @@ import { useServerManager } from "../hooks/useServerManager";
 type ServerType = 'paper' | 'spigot' | 'vanilla' | 'fabric' | 'forge' | 'purpur' | 'velocity' | 'waterfall' | 'bungeecord' | 'manual';
 
 export default function CreateServerButton() {
-  const { createServer } = useServerManager();
+  const { createServer, startServer } = useServerManager();
   const [isCreating, setIsCreating] = useState(false);
   const [showInput, setShowInput] = useState(false);
   const [serverName, setServerName] = useState("");
@@ -16,10 +16,17 @@ export default function CreateServerButton() {
   const [manualJarPath, setManualJarPath] = useState<string | null>(null);
   const [ramGB, setRamGB] = useState(4);
   const [maxRAM, setMaxRAM] = useState(16); // Safe default
+  const [serverPort, setServerPort] = useState(25565);
+  const [createStep, setCreateStep] = useState(0);
+  const [portMessage, setPortMessage] = useState<string | null>(null);
+  const [creatingStatus, setCreatingStatus] = useState("Creating server files...");
+  const [autoStart, setAutoStart] = useState(true);
   const [settings, setSettings] = useState<any>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [warningMessage, setWarningMessage] = useState<string | null>(null);
   const ramSliderRef = useRef<HTMLDivElement>(null);
+  const portCheckTimeoutRef = useRef<number | null>(null);
+  const stepLabels = ['Server Type', 'Version', 'Settings'];
 
   useEffect(() => {
     // Load settings and system RAM
@@ -29,6 +36,7 @@ export default function CreateServerButton() {
           const appSettings = await window.electronAPI.server.getAppSettings();
           setSettings(appSettings);
           setRamGB(appSettings.defaultRAM || 4);
+          setServerPort(appSettings.defaultPort || 25565);
           
           // Get system RAM info
           const systemInfo = await window.electronAPI.server.getSystemInfo();
@@ -51,8 +59,38 @@ export default function CreateServerButton() {
   }, [showInput]);
 
   useEffect(() => {
+    if (!showInput || !window.electronAPI?.server?.findAvailablePort) return;
+    if (serverPort < 1024 || serverPort > 65535) return;
+
+    if (portCheckTimeoutRef.current) {
+      window.clearTimeout(portCheckTimeoutRef.current);
+    }
+
+    portCheckTimeoutRef.current = window.setTimeout(async () => {
+      try {
+        const suggestedPort = await window.electronAPI!.server.findAvailablePort(serverPort);
+        if (suggestedPort && suggestedPort !== serverPort) {
+          setServerPort(suggestedPort);
+          setPortMessage(`Port ${serverPort} is in use. Switched to ${suggestedPort}.`);
+        } else {
+          setPortMessage(null);
+        }
+      } catch (error) {
+        console.error('Failed to check port availability:', error);
+      }
+    }, 250);
+
+    return () => {
+      if (portCheckTimeoutRef.current) {
+        window.clearTimeout(portCheckTimeoutRef.current);
+        portCheckTimeoutRef.current = null;
+      }
+    };
+  }, [serverPort, showInput]);
+
+  useEffect(() => {
     // Update green bar position for RAM slider
-    if (ramSliderRef.current && showInput) {
+    if (ramSliderRef.current && showInput && createStep === 2) {
       const slider = ramSliderRef.current.querySelector('input[type="range"]') as HTMLInputElement;
       const fill = ramSliderRef.current.querySelector('.ram-fill') as HTMLElement;
       if (slider && fill) {
@@ -66,16 +104,17 @@ export default function CreateServerButton() {
           const thumbPosition = (percentage / 100) * (sliderWidth - thumbWidth) + (thumbWidth / 2);
           fill.style.width = `${Math.max(0, thumbPosition - (thumbWidth / 2))}px`;
         };
-        updateFill();
+        const rafId = requestAnimationFrame(updateFill);
         slider.addEventListener('input', updateFill);
         window.addEventListener('resize', updateFill);
         return () => {
+          cancelAnimationFrame(rafId);
           slider.removeEventListener('input', updateFill);
           window.removeEventListener('resize', updateFill);
         };
       }
     }
-  }, [ramGB, maxRAM, showInput]);
+  }, [ramGB, maxRAM, showInput, createStep]);
 
   useEffect(() => {
     // Reload versions when server type changes
@@ -147,7 +186,7 @@ export default function CreateServerButton() {
       }
 
       if (versionsList.length === 0) {
-        alert('Failed to load versions. Please check your internet connection and try again.');
+        setErrorMessage('Failed to load versions. Please check your internet connection and try again.');
         return;
       }
 
@@ -158,7 +197,7 @@ export default function CreateServerButton() {
       }
     } catch (error) {
       console.error('Failed to load versions:', error);
-      alert('Failed to load versions. Please check your internet connection and try again.');
+      setErrorMessage('Failed to load versions. Please check your internet connection and try again.');
     } finally {
       setLoadingVersions(false);
     }
@@ -173,28 +212,41 @@ export default function CreateServerButton() {
       }
     } catch (error) {
       console.error('Failed to select jar file:', error);
-      alert('Failed to select jar file');
+      setErrorMessage('Failed to select JAR file.');
     }
+  };
+
+  const handleSelectType = (type: ServerType) => {
+    if (isCreating) return;
+    setServerType(type);
+    setSelectedVersion(null);
+    setManualJarPath(null);
   };
 
   const handleCreate = async () => {
     if (!serverName.trim()) {
-      alert('Please enter a server name');
+      setErrorMessage('Please enter a server name.');
       return;
     }
 
     if (serverType === 'manual') {
       if (!manualJarPath) {
-        alert('Please select a JAR file');
+        setErrorMessage('Please select a JAR file.');
         return;
       }
     } else {
       if (!selectedVersion) {
-        alert('Please select a version');
+        setErrorMessage('Please select a version.');
         return;
       }
     }
 
+    if (serverPort < 1024 || serverPort > 65535) {
+      setErrorMessage('Please enter a valid port (1024-65535).');
+      return;
+    }
+
+    setCreatingStatus(serverType === 'manual' ? 'Copying server files...' : 'Creating server files...');
     setIsCreating(true);
     try {
       // Replace spaces with dashes for folder name, but keep original for display
@@ -206,18 +258,31 @@ export default function CreateServerButton() {
         serverType,
         selectedVersion,
         serverRAM,
+        serverPort,
         manualJarPath,
         displayName // Pass display name separately
       );
       if (result.success) {
+        if (autoStart) {
+          setCreatingStatus("Starting server...");
+          const startResult = await startServer(sanitizedServerName, serverRAM);
+          if (!startResult.success) {
+            setErrorMessage(startResult.error || "Server created, but failed to start.");
+            return;
+          }
+        }
         setShowInput(false);
         setServerName("");
         setServerType('paper');
         setSelectedVersion(null);
         setManualJarPath(null);
         setRamGB(settings?.defaultRAM || 4);
+        setServerPort(settings?.defaultPort || 25565);
+        setCreateStep(0);
         setErrorMessage(null);
         setWarningMessage(null);
+        setPortMessage(null);
+        setAutoStart(true);
       } else {
         // Show error in UI instead of alert
         const errorMsg = result.error || "Unknown error";
@@ -235,6 +300,7 @@ export default function CreateServerButton() {
     } catch (error: any) {
       setErrorMessage(error.message || "Unknown error occurred");
     } finally {
+      setCreatingStatus("Creating server files...");
       setIsCreating(false);
     }
   };
@@ -246,6 +312,10 @@ export default function CreateServerButton() {
     setSelectedVersion(null);
     setManualJarPath(null);
     setRamGB(settings?.defaultRAM || 4);
+    setServerPort(settings?.defaultPort || 25565);
+    setCreateStep(0);
+    setPortMessage(null);
+    setAutoStart(true);
   };
 
   const serverTypes = [
@@ -272,191 +342,23 @@ export default function CreateServerButton() {
           style={{ pointerEvents: 'auto' }}
           onClick={(e) => e.stopPropagation()}
         >
-        <h3 className="text-lg font-semibold text-text-primary font-mono mb-6">
-          CREATE SERVER
-        </h3>
-        
-        <div className="space-y-6 relative z-10">
-          {/* Server Name */}
-          <div>
-            <label className="block text-sm text-text-secondary font-mono mb-2">
-              Server Name
-            </label>
-            <input
-              type="text"
-              value={serverName}
-              onChange={(e) => {
-                // Allow spaces in display name, but folder will use dashes
-                setServerName(e.target.value);
-              }}
-              placeholder="my server"
-              className="w-full bg-background-secondary border border-border px-4 py-3 text-text-primary font-mono text-sm focus:outline-none focus:border-accent/50 rounded relative z-10"
-              disabled={isCreating}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !isCreating) {
-                  handleCreate();
-                } else if (e.key === "Escape") {
-                  handleCancel();
-                }
-              }}
-              autoFocus
-              style={{ pointerEvents: 'auto' }}
-            />
-          </div>
-
-          {/* Server Type - Card Selection */}
-          <div>
-            <label className="block text-sm text-text-secondary font-mono mb-3">
-              Server Type
-            </label>
-            <div className="space-y-4">
-              {/* Game Servers */}
-              <div>
-                <div className="text-xs text-text-muted font-mono mb-2 uppercase tracking-wider">Game Servers</div>
-                <div className="grid grid-cols-2 gap-3">
-                  {serverTypes.filter(t => t.category === 'server').map((type) => (
-                    <motion.button
-                      key={type.id}
-                      onClick={() => !isCreating && setServerType(type.id)}
-                      disabled={isCreating}
-                      className={`relative p-4 rounded-lg border-2 transition-all text-left ${
-                        serverType === type.id
-                          ? `${type.borderColor} bg-gradient-to-br ${type.color}`
-                          : 'border-border bg-background-secondary hover:border-border/80'
-                      } disabled:opacity-50 disabled:cursor-not-allowed relative z-10`}
-                      whileHover={!isCreating ? { scale: 1.02 } : {}}
-                      whileTap={!isCreating ? { scale: 0.98 } : {}}
-                      style={{ pointerEvents: 'auto' }}
-                    >
-                      <div className="flex items-start gap-3">
-                        <span className="text-2xl">{type.icon}</span>
-                        <div className="flex-1 min-w-0">
-                          <div className="font-mono font-semibold text-text-primary text-sm mb-1">
-                            {type.name}
-                            {type.id === 'paper' && (
-                              <span className="ml-2 text-xs text-accent">(Recommended)</span>
-                            )}
-                          </div>
-                          <div className="text-xs text-text-muted font-mono">
-                            {type.description}
-                          </div>
-                          {(type.id === 'spigot' || type.id === 'forge' || type.id === 'bungeecord') && (
-                            <div className="mt-1 text-[10px] text-yellow-400/80 font-mono">
-                              {type.id === 'spigot' && '⚠️ May require BuildTools'}
-                              {type.id === 'forge' && '⚠️ May require manual setup'}
-                              {type.id === 'bungeecord' && '⚠️ Limited downloads'}
-                            </div>
-                          )}
-                        </div>
-                        {serverType === type.id && (
-                          <motion.div
-                            initial={{ scale: 0 }}
-                            animate={{ scale: 1 }}
-                            className="h-5 w-5 rounded-full bg-accent flex items-center justify-center"
-                          >
-                            <svg className="w-3 h-3 text-background" fill="currentColor" viewBox="0 0 20 20">
-                              <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                            </svg>
-                          </motion.div>
-                        )}
-                      </div>
-                    </motion.button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Proxy Servers */}
-              <div>
-                <div className="text-xs text-text-muted font-mono mb-2 uppercase tracking-wider">Proxy Servers</div>
-                <div className="grid grid-cols-3 gap-3">
-                  {serverTypes.filter(t => t.category === 'proxy').map((type) => (
-                    <motion.button
-                      key={type.id}
-                      onClick={() => !isCreating && setServerType(type.id)}
-                      disabled={isCreating}
-                      className={`relative p-4 rounded-lg border-2 transition-all text-left ${
-                        serverType === type.id
-                          ? `${type.borderColor} bg-gradient-to-br ${type.color}`
-                          : 'border-border bg-background-secondary hover:border-border/80'
-                      } disabled:opacity-50 disabled:cursor-not-allowed relative z-10`}
-                      whileHover={!isCreating ? { scale: 1.02 } : {}}
-                      whileTap={!isCreating ? { scale: 0.98 } : {}}
-                      style={{ pointerEvents: 'auto' }}
-                    >
-                      <div className="flex items-start gap-3">
-                        <span className="text-2xl">{type.icon}</span>
-                        <div className="flex-1 min-w-0">
-                          <div className="font-mono font-semibold text-text-primary text-sm mb-1">
-                            {type.name}
-                          </div>
-                          <div className="text-xs text-text-muted font-mono">
-                            {type.description}
-                          </div>
-                        </div>
-                        {serverType === type.id && (
-                          <motion.div
-                            initial={{ scale: 0 }}
-                            animate={{ scale: 1 }}
-                            className="h-5 w-5 rounded-full bg-accent flex items-center justify-center"
-                          >
-                            <svg className="w-3 h-3 text-background" fill="currentColor" viewBox="0 0 20 20">
-                              <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                            </svg>
-                          </motion.div>
-                        )}
-                      </div>
-                    </motion.button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Manual */}
-              <div>
-                <div className="text-xs text-text-muted font-mono mb-2 uppercase tracking-wider">Other</div>
-                <div className="grid grid-cols-1 gap-3">
-                  {serverTypes.filter(t => t.category === 'manual').map((type) => (
-                    <motion.button
-                      key={type.id}
-                      onClick={() => !isCreating && setServerType(type.id)}
-                      disabled={isCreating}
-                      className={`relative p-4 rounded-lg border-2 transition-all text-left ${
-                        serverType === type.id
-                          ? `${type.borderColor} bg-gradient-to-br ${type.color}`
-                          : 'border-border bg-background-secondary hover:border-border/80'
-                      } disabled:opacity-50 disabled:cursor-not-allowed relative z-10`}
-                      whileHover={!isCreating ? { scale: 1.02 } : {}}
-                      whileTap={!isCreating ? { scale: 0.98 } : {}}
-                      style={{ pointerEvents: 'auto' }}
-                    >
-                      <div className="flex items-start gap-3">
-                        <span className="text-2xl">{type.icon}</span>
-                        <div className="flex-1 min-w-0">
-                          <div className="font-mono font-semibold text-text-primary text-sm mb-1">
-                            {type.name}
-                          </div>
-                          <div className="text-xs text-text-muted font-mono">
-                            {type.description}
-                          </div>
-                        </div>
-                        {serverType === type.id && (
-                          <motion.div
-                            initial={{ scale: 0 }}
-                            animate={{ scale: 1 }}
-                            className="h-5 w-5 rounded-full bg-accent flex items-center justify-center"
-                          >
-                            <svg className="w-3 h-3 text-background" fill="currentColor" viewBox="0 0 20 20">
-                              <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                            </svg>
-                          </motion.div>
-                        )}
-                      </div>
-                    </motion.button>
-                  ))}
-                </div>
-              </div>
+        {isCreating && (
+          <div className="absolute inset-0 z-20 bg-background/70 backdrop-blur-sm flex items-center justify-center">
+            <div className="flex items-center gap-3 text-text-primary font-mono text-sm">
+              <div className="h-5 w-5 rounded-full border-2 border-accent border-t-transparent animate-spin"></div>
+              {creatingStatus}
             </div>
           </div>
-
+        )}
+        <h3 className="text-lg font-semibold text-text-primary font-mono">
+          CREATE SERVER
+        </h3>
+        <div className="flex items-center justify-between text-xs text-text-muted font-mono mt-2 mb-6">
+          <span>Step {createStep + 1} of 3</span>
+          <span className="text-text-primary">{stepLabels[createStep]}</span>
+        </div>
+        
+        <div className="space-y-6 relative z-10">
           {/* Warning/Error Messages */}
           {(warningMessage || errorMessage) && (
             <div className={`p-3 rounded-lg border-2 ${
@@ -523,8 +425,174 @@ export default function CreateServerButton() {
             </div>
           )}
 
-          {/* Version Selection or Manual JAR */}
-          {serverType === 'manual' ? (
+          {portMessage && !errorMessage && (
+            <div className="p-3 rounded-lg border-2 border-blue-500/40 bg-blue-500/10 text-blue-300">
+              <div className="flex items-start gap-2">
+                <span className="text-lg">ℹ️</span>
+                <div className="flex-1 font-mono text-xs">
+                  {portMessage}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Step 1: Server Type */}
+          {createStep === 0 && (
+            <div>
+              <label className="block text-sm text-text-secondary font-mono mb-3">
+                Server Type
+              </label>
+              <div className="space-y-4">
+                {/* Game Servers */}
+                <div>
+                  <div className="text-xs text-text-muted font-mono mb-2 uppercase tracking-wider">Game Servers</div>
+                  <div className="grid grid-cols-2 gap-3">
+                    {serverTypes.filter(t => t.category === 'server').map((type) => (
+                      <motion.button
+                        key={type.id}
+                        onClick={() => handleSelectType(type.id)}
+                        disabled={isCreating}
+                        className={`relative p-4 rounded-lg border-2 transition-all text-left ${
+                          serverType === type.id
+                            ? `${type.borderColor} bg-gradient-to-br ${type.color}`
+                            : 'border-border bg-background-secondary hover:border-border/80'
+                        } disabled:opacity-50 disabled:cursor-not-allowed relative z-10`}
+                        whileHover={!isCreating ? { scale: 1.02 } : {}}
+                        whileTap={!isCreating ? { scale: 0.98 } : {}}
+                        style={{ pointerEvents: 'auto' }}
+                      >
+                        <div className="flex items-start gap-3">
+                          <span className="text-2xl">{type.icon}</span>
+                          <div className="flex-1 min-w-0">
+                            <div className="font-mono font-semibold text-text-primary text-sm mb-1">
+                              {type.name}
+                              {type.id === 'paper' && (
+                                <span className="ml-2 text-xs text-accent">(Recommended)</span>
+                              )}
+                            </div>
+                            <div className="text-xs text-text-muted font-mono">
+                              {type.description}
+                            </div>
+                            {(type.id === 'spigot' || type.id === 'forge' || type.id === 'bungeecord') && (
+                              <div className="mt-1 text-[10px] text-yellow-400/80 font-mono">
+                                {type.id === 'spigot' && '⚠️ May require BuildTools'}
+                                {type.id === 'forge' && '⚠️ May require manual setup'}
+                                {type.id === 'bungeecord' && '⚠️ Limited downloads'}
+                              </div>
+                            )}
+                          </div>
+                          {serverType === type.id && (
+                            <motion.div
+                              initial={{ scale: 0 }}
+                              animate={{ scale: 1 }}
+                              className="h-5 w-5 rounded-full bg-accent flex items-center justify-center"
+                            >
+                              <svg className="w-3 h-3 text-background" fill="currentColor" viewBox="0 0 20 20">
+                                <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                              </svg>
+                            </motion.div>
+                          )}
+                        </div>
+                      </motion.button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Proxy Servers */}
+                <div>
+                  <div className="text-xs text-text-muted font-mono mb-2 uppercase tracking-wider">Proxy Servers</div>
+                  <div className="grid grid-cols-3 gap-3">
+                    {serverTypes.filter(t => t.category === 'proxy').map((type) => (
+                      <motion.button
+                        key={type.id}
+                        onClick={() => handleSelectType(type.id)}
+                        disabled={isCreating}
+                        className={`relative p-4 rounded-lg border-2 transition-all text-left ${
+                          serverType === type.id
+                            ? `${type.borderColor} bg-gradient-to-br ${type.color}`
+                            : 'border-border bg-background-secondary hover:border-border/80'
+                        } disabled:opacity-50 disabled:cursor-not-allowed relative z-10`}
+                        whileHover={!isCreating ? { scale: 1.02 } : {}}
+                        whileTap={!isCreating ? { scale: 0.98 } : {}}
+                        style={{ pointerEvents: 'auto' }}
+                      >
+                        <div className="flex items-start gap-3">
+                          <span className="text-2xl">{type.icon}</span>
+                          <div className="flex-1 min-w-0">
+                            <div className="font-mono font-semibold text-text-primary text-sm mb-1">
+                              {type.name}
+                            </div>
+                            <div className="text-xs text-text-muted font-mono">
+                              {type.description}
+                            </div>
+                          </div>
+                          {serverType === type.id && (
+                            <motion.div
+                              initial={{ scale: 0 }}
+                              animate={{ scale: 1 }}
+                              className="h-5 w-5 rounded-full bg-accent flex items-center justify-center"
+                            >
+                              <svg className="w-3 h-3 text-background" fill="currentColor" viewBox="0 0 20 20">
+                                <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                              </svg>
+                            </motion.div>
+                          )}
+                        </div>
+                      </motion.button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Manual */}
+                <div>
+                  <div className="text-xs text-text-muted font-mono mb-2 uppercase tracking-wider">Other</div>
+                  <div className="grid grid-cols-1 gap-3">
+                    {serverTypes.filter(t => t.category === 'manual').map((type) => (
+                      <motion.button
+                        key={type.id}
+                        onClick={() => handleSelectType(type.id)}
+                        disabled={isCreating}
+                        className={`relative p-4 rounded-lg border-2 transition-all text-left ${
+                          serverType === type.id
+                            ? `${type.borderColor} bg-gradient-to-br ${type.color}`
+                            : 'border-border bg-background-secondary hover:border-border/80'
+                        } disabled:opacity-50 disabled:cursor-not-allowed relative z-10`}
+                        whileHover={!isCreating ? { scale: 1.02 } : {}}
+                        whileTap={!isCreating ? { scale: 0.98 } : {}}
+                        style={{ pointerEvents: 'auto' }}
+                      >
+                        <div className="flex items-start gap-3">
+                          <span className="text-2xl">{type.icon}</span>
+                          <div className="flex-1 min-w-0">
+                            <div className="font-mono font-semibold text-text-primary text-sm mb-1">
+                              {type.name}
+                            </div>
+                            <div className="text-xs text-text-muted font-mono">
+                              {type.description}
+                            </div>
+                          </div>
+                          {serverType === type.id && (
+                            <motion.div
+                              initial={{ scale: 0 }}
+                              animate={{ scale: 1 }}
+                              className="h-5 w-5 rounded-full bg-accent flex items-center justify-center"
+                            >
+                              <svg className="w-3 h-3 text-background" fill="currentColor" viewBox="0 0 20 20">
+                                <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                              </svg>
+                            </motion.div>
+                          )}
+                        </div>
+                      </motion.button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Step 2: Version or Manual JAR */}
+          {createStep === 1 && serverType === 'manual' ? (
             <div>
               <label className="block text-sm text-text-secondary font-mono mb-2">
                 JAR File
@@ -555,7 +623,9 @@ export default function CreateServerButton() {
                 </p>
               )}
             </div>
-          ) : (
+          ) : null}
+
+          {createStep === 1 && serverType !== 'manual' ? (
             <div>
               <label className="block text-sm text-text-secondary font-mono mb-3">
                 Version
@@ -589,7 +659,10 @@ export default function CreateServerButton() {
                       return (
                         <motion.button
                           key={version}
-                          onClick={() => !isCreating && setSelectedVersion(version)}
+                          onClick={() => {
+                            if (isCreating) return;
+                            setSelectedVersion(version);
+                          }}
                           disabled={isCreating}
                           className={`relative p-3 rounded border-2 transition-all text-center font-mono text-sm ${
                             isSelected
@@ -631,49 +704,136 @@ export default function CreateServerButton() {
                 </div>
               )}
             </div>
-          )}
+          ) : null}
 
-          {/* RAM Allocation */}
-          <div className="text-text-secondary font-mono text-sm">
-            <label className="block mb-2 text-text-primary">RAM Allocation: {ramGB}GB</label>
-            <div className="flex items-center gap-4 relative">
-              <div className="flex-1 relative h-2" ref={ramSliderRef}>
-                {/* Filled portion - calculated dynamically to stop at thumb */}
-                <div 
-                  className="ram-fill absolute inset-y-0 left-0 h-2 bg-accent rounded-l-lg pointer-events-none"
-                  style={{ zIndex: 1 }}
-                ></div>
-                {/* Slider input */}
+          {/* Step 3: Settings */}
+          {createStep === 2 && (
+            <>
+              <div>
+                <label className="block text-sm text-text-secondary font-mono mb-2">
+                  Server Name
+                </label>
                 <input
-                  type="range"
-                  min="1"
-                  max={maxRAM}
-                  value={ramGB}
-                  onChange={(e) => setRamGB(parseInt(e.target.value))}
+                  type="text"
+                  value={serverName}
+                  onChange={(e) => {
+                    // Allow spaces in display name, but folder will use dashes
+                    setServerName(e.target.value);
+                  }}
+                  placeholder="my server"
+                  className="w-full bg-background-secondary border border-border px-4 py-3 text-text-primary font-mono text-sm focus:outline-none focus:border-accent/50 rounded relative z-10"
                   disabled={isCreating}
-                  className="absolute inset-0 w-full h-2 appearance-none cursor-pointer slider-custom bg-transparent"
-                  style={{ zIndex: 5 }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !isCreating) {
+                      handleCreate();
+                    } else if (e.key === "Escape") {
+                      handleCancel();
+                    }
+                  }}
+                  autoFocus
+                  style={{ pointerEvents: 'auto' }}
                 />
               </div>
+
+              {/* RAM Allocation */}
+              <div className="text-text-secondary font-mono text-sm">
+                <label className="block mb-2 text-text-primary">RAM Allocation: {ramGB}GB</label>
+                <div className="flex items-center gap-4 relative">
+                  <div className="flex-1 relative h-2" ref={ramSliderRef}>
+                    {/* Filled portion - calculated dynamically to stop at thumb */}
+                    <div 
+                      className="ram-fill absolute inset-y-0 left-0 h-2 bg-accent rounded-l-lg pointer-events-none"
+                      style={{ zIndex: 1 }}
+                    ></div>
+                    {/* Slider input */}
+                    <input
+                      type="range"
+                      min="1"
+                      max={maxRAM}
+                      value={ramGB}
+                      onChange={(e) => setRamGB(parseInt(e.target.value))}
+                      disabled={isCreating}
+                      className="absolute inset-0 w-full h-2 appearance-none cursor-pointer slider-custom bg-transparent"
+                      style={{ zIndex: 5 }}
+                    />
+                  </div>
+                </div>
+                <div className="flex justify-between text-xs text-text-muted font-mono mt-1">
+                  <span>1GB</span>
+                  <span>{maxRAM}GB</span>
+                </div>
+              </div>
+
+              {/* Server Port */}
+              <div className="text-text-secondary font-mono text-sm">
+                <label className="block mb-2 text-text-primary">Server Port</label>
+                <input
+                  type="number"
+                  min="1024"
+                  max="65535"
+                  value={serverPort}
+                  onChange={(e) => setServerPort(parseInt(e.target.value) || 0)}
+                  disabled={isCreating}
+                  className="w-full bg-background-secondary border border-border px-4 py-3 text-text-primary font-mono text-sm focus:outline-none focus:border-accent/50 rounded"
+                />
+                <p className="text-xs text-text-muted mt-1">Recommended: 25565 (1024-65535)</p>
+              </div>
+
+            <div className="flex items-center justify-between text-text-secondary font-mono text-sm">
+              <div>
+                <span>Auto-start server</span>
+                <p className="text-xs text-text-muted">Launch immediately after creation</p>
+              </div>
+              <input
+                type="checkbox"
+                checked={autoStart}
+                onChange={(e) => setAutoStart(e.target.checked)}
+                disabled={isCreating}
+                className="w-4 h-4 accent-accent cursor-pointer"
+              />
             </div>
-            <div className="flex justify-between text-xs text-text-muted font-mono mt-1">
-              <span>1GB</span>
-              <span>{maxRAM}GB</span>
-            </div>
-          </div>
+            </>
+          )}
         </div>
 
         <div className="flex gap-3 mt-8 relative z-10">
-          <motion.button
-            onClick={handleCreate}
-            disabled={isCreating || !serverName.trim() || (serverType !== 'manual' && !selectedVersion) || (serverType === 'manual' && !manualJarPath)}
-            className="btn-primary flex-1 disabled:opacity-50 disabled:cursor-not-allowed relative z-10"
-            whileHover={{ scale: (isCreating || !serverName.trim() || (serverType !== 'manual' && !selectedVersion) || (serverType === 'manual' && !manualJarPath)) ? 1 : 1.02 }}
-            whileTap={{ scale: (isCreating || !serverName.trim() || (serverType !== 'manual' && !selectedVersion) || (serverType === 'manual' && !manualJarPath)) ? 1 : 0.98 }}
-            style={{ pointerEvents: 'auto' }}
-          >
-            {isCreating ? "CREATING..." : "CREATE SERVER"}
-          </motion.button>
+          {createStep > 0 && (
+            <motion.button
+              onClick={() => setCreateStep((prev) => Math.max(0, prev - 1))}
+              disabled={isCreating}
+              className="btn-secondary disabled:opacity-50 disabled:cursor-not-allowed relative z-10"
+              whileHover={{ scale: isCreating ? 1 : 1.02 }}
+              whileTap={{ scale: isCreating ? 1 : 0.98 }}
+              style={{ pointerEvents: 'auto' }}
+            >
+              BACK
+            </motion.button>
+          )}
+          {createStep < 2 ? (
+            <motion.button
+              onClick={() => setCreateStep((prev) => Math.min(2, prev + 1))}
+              disabled={
+                isCreating || (createStep === 1 && (serverType === 'manual' ? !manualJarPath : !selectedVersion))
+              }
+              className="btn-primary flex-1 disabled:opacity-50 disabled:cursor-not-allowed relative z-10"
+              whileHover={{ scale: (isCreating || (createStep === 1 && (serverType === 'manual' ? !manualJarPath : !selectedVersion))) ? 1 : 1.02 }}
+              whileTap={{ scale: (isCreating || (createStep === 1 && (serverType === 'manual' ? !manualJarPath : !selectedVersion))) ? 1 : 0.98 }}
+              style={{ pointerEvents: 'auto' }}
+            >
+              NEXT
+            </motion.button>
+          ) : (
+            <motion.button
+              onClick={handleCreate}
+              disabled={isCreating || !serverName.trim() || (serverType !== 'manual' && !selectedVersion) || (serverType === 'manual' && !manualJarPath)}
+              className="btn-primary flex-1 disabled:opacity-50 disabled:cursor-not-allowed relative z-10"
+              whileHover={{ scale: (isCreating || !serverName.trim() || (serverType !== 'manual' && !selectedVersion) || (serverType === 'manual' && !manualJarPath)) ? 1 : 1.02 }}
+              whileTap={{ scale: (isCreating || !serverName.trim() || (serverType !== 'manual' && !selectedVersion) || (serverType === 'manual' && !manualJarPath)) ? 1 : 0.98 }}
+              style={{ pointerEvents: 'auto' }}
+            >
+              {isCreating ? "CREATING..." : "CREATE SERVER"}
+            </motion.button>
+          )}
           <motion.button
             onClick={handleCancel}
             disabled={isCreating}
@@ -692,7 +852,12 @@ export default function CreateServerButton() {
 
   return (
     <motion.button
-      onClick={() => setShowInput(true)}
+      onClick={() => {
+        setShowInput(true);
+        setCreateStep(0);
+        setErrorMessage(null);
+        setWarningMessage(null);
+      }}
       className="btn-primary"
       whileHover={{ scale: 1.02 }}
       whileTap={{ scale: 0.98 }}

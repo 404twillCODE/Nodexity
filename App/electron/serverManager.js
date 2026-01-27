@@ -1,9 +1,10 @@
-const { spawn, execSync } = require('child_process');
+const { spawn, execSync, execFile } = require('child_process');
 const fs = require('fs').promises;
 const path = require('path');
 const os = require('os');
 const https = require('https');
 const http = require('http');
+const net = require('net');
 
 // Get AppData\Roaming path (like Minecraft)
 function getAppDataPath() {
@@ -27,6 +28,52 @@ async function ensureDirectories() {
   await fs.mkdir(HEXNODE_DIR, { recursive: true });
   await fs.mkdir(SERVERS_DIR, { recursive: true });
   await fs.mkdir(BACKUPS_DIR, { recursive: true });
+}
+
+async function isPortAvailable(port) {
+  return new Promise((resolve) => {
+    if (!Number.isInteger(port) || port <= 0 || port > 65535) {
+      resolve(false);
+      return;
+    }
+    const tester = net
+      .createServer()
+      .once('error', () => resolve(false))
+      .once('listening', () => {
+        tester.close(() => resolve(true));
+      })
+      .listen(port, '0.0.0.0');
+    tester.unref();
+  });
+}
+
+async function findAvailablePort(startPort, maxAttempts = 50) {
+  let port = Number(startPort);
+  if (!Number.isInteger(port) || port <= 0 || port > 65535) {
+    port = 25565;
+  }
+  const configs = await loadServerConfigs();
+  const usedPorts = new Set(
+    Object.values(configs)
+      .map((config) => Number(config?.port))
+      .filter((value) => Number.isInteger(value))
+  );
+  for (let i = 0; i < maxAttempts; i += 1) {
+    const currentPort = port + i;
+    if (currentPort > 65535) break;
+    // eslint-disable-next-line no-await-in-loop
+    const available = await isPortAvailable(currentPort);
+    if (available && !usedPorts.has(currentPort)) return currentPort;
+  }
+  return null;
+}
+
+function normalizeRamGB(value, fallback) {
+  const parsed = Number(value);
+  if (Number.isFinite(parsed) && parsed > 0) {
+    return parsed;
+  }
+  return fallback;
 }
 
 // Get system information
@@ -1127,7 +1174,7 @@ async function saveServerConfig(serverName, config) {
 }
 
 // Create server
-async function createServer(serverName = 'default', serverType = 'paper', version = null, ramGB = null, manualJarPath = null, displayName = null) {
+async function createServer(serverName = 'default', serverType = 'paper', version = null, ramGB = null, port = null, manualJarPath = null, displayName = null) {
   try {
     await ensureDirectories();
     const settings = await getAppSettings();
@@ -1227,13 +1274,37 @@ async function createServer(serverName = 'default', serverType = 'paper', versio
       }
     }
 
-    const serverRAM = ramGB !== null ? ramGB : (settings.defaultRAM || 4);
-    const serverPort = settings.defaultPort || 25565;
+    const serverRAM = normalizeRamGB(ramGB, settings.defaultRAM || 4);
+    const parsedPort = Number.isFinite(port) ? Number(port) : null;
+    const serverPort = parsedPort && parsedPort >= 1024 && parsedPort <= 65535
+      ? parsedPort
+      : (settings.defaultPort || 25565);
 
     // Create eula.txt (not needed for proxy servers)
     if (!['velocity', 'waterfall', 'bungeecord'].includes(serverType)) {
       const eulaPath = path.join(serverPath, 'eula.txt');
       await fs.writeFile(eulaPath, 'eula=true\n', 'utf8');
+    }
+
+    // Set server port early so first boot uses the correct port
+    if (!['velocity', 'waterfall', 'bungeecord'].includes(serverType)) {
+      const propertiesPath = path.join(serverPath, 'server.properties');
+      try {
+        let contents = '';
+        try {
+          contents = await fs.readFile(propertiesPath, 'utf8');
+        } catch (readError) {
+          if (readError.code !== 'ENOENT') throw readError;
+        }
+        if (contents.includes('server-port=')) {
+          contents = contents.replace(/^server-port=.*$/m, `server-port=${serverPort}`);
+        } else {
+          contents = `${contents}${contents && !contents.endsWith('\n') ? '\n' : ''}server-port=${serverPort}\n`;
+        }
+        await fs.writeFile(propertiesPath, contents, 'utf8');
+      } catch (error) {
+        console.error('Failed to set server port:', error);
+      }
     }
 
     // Save server config
@@ -1404,7 +1475,7 @@ async function startServer(serverName, ramGB = null) {
     if (config?.pid && !isPidAlive(config.pid)) {
       await saveServerConfig(serverName, { ...config, pid: undefined, status: 'STOPPED' });
     }
-    const serverRAM = ramGB !== null ? ramGB : (config?.ramGB || 4);
+    const serverRAM = normalizeRamGB(ramGB, config?.ramGB || 4);
     
     // Update status to STARTING
     await saveServerConfig(serverName, {
@@ -1594,9 +1665,163 @@ async function deleteServer(serverName) {
 // Cache for server usage to reduce stuttering
 const serverUsageCache = new Map(); // Map<serverName, { usage, timestamp }>
 const USAGE_CACHE_TTL = 1000; // 1 second cache
+let aggregateUsageCache = { totalCPU: 0, totalRAM: 0, totalRAMMB: 0, serverUsages: {}, timestamp: 0 };
+let usageRefreshTimer = null;
+let usageRefreshInFlight = false;
+
+function startUsageRefreshLoop() {
+  if (usageRefreshTimer) return;
+  usageRefreshTimer = setInterval(async () => {
+    if (usageRefreshInFlight) return;
+    usageRefreshInFlight = true;
+    try {
+      await refreshUsageCache();
+    } catch (error) {
+      // Ignore refresh errors
+    } finally {
+      usageRefreshInFlight = false;
+    }
+  }, 1000);
+}
 
 // Get server usage (CPU, RAM) for a single server
 // Now reads from jar file config and caches results to reduce stuttering
+async function computeServerUsage(serverName, pid, configuredRAM) {
+  let cpuPercent = 0;
+  let ramMB = configuredRAM * 1024;
+  const now = Date.now();
+
+  if (os.platform() === 'win32') {
+    try {
+      const cmd = `$pids = @(${pid}); $pids += (Get-CimInstance Win32_Process -Filter "ParentProcessId=${pid}" | Select-Object -ExpandProperty ProcessId); $procs = Get-Process -Id $pids -ErrorAction SilentlyContinue; if ($procs) { $totalWorkingSet = ($procs | Measure-Object -Property WorkingSet64 -Sum).Sum; $totalCpuMs = ($procs | ForEach-Object { $_.TotalProcessorTime.TotalMilliseconds } | Measure-Object -Sum).Sum; @{ WorkingSet = $totalWorkingSet; ProcessorTime = $totalCpuMs } | ConvertTo-Json }`;
+      const output = await new Promise((resolve, reject) => {
+        execFile('powershell', ['-NoProfile', '-Command', cmd], { timeout: 3000 }, (error, stdout) => {
+          if (error) return reject(error);
+          resolve(stdout);
+        });
+      });
+
+      if (output && output.trim()) {
+        const processInfo = JSON.parse(output);
+
+        if (processInfo) {
+          ramMB = Math.round((processInfo.WorkingSet || 0) / (1024 * 1024));
+
+          const currentCpuTime = processInfo.ProcessorTime || 0;
+          const tracking = cpuUsageTracking.get(serverName);
+
+          if (tracking && tracking.lastCheckTime) {
+            const timeDiff = (now - tracking.lastCheckTime) / 1000;
+            const cpuTimeDiff = (currentCpuTime - tracking.lastCpuTime) / 1000;
+
+            if (timeDiff > 0) {
+              const cpuCores = os.cpus().length;
+              cpuPercent = Math.min(100, (cpuTimeDiff / timeDiff / cpuCores) * 100);
+              cpuPercent = Math.max(0, cpuPercent);
+            }
+          }
+
+          cpuUsageTracking.set(serverName, {
+            lastCpuTime: currentCpuTime,
+            lastCheckTime: now
+          });
+        }
+      }
+    } catch (error) {
+      try {
+        const wmicOutput = await new Promise((resolve, reject) => {
+          execFile('wmic', ['process', 'where', `ProcessId=${pid}`, 'get', 'WorkingSetSize', '/format:csv'], { timeout: 3000 }, (wmicError, stdout) => {
+            if (wmicError) return reject(wmicError);
+            resolve(stdout);
+          });
+        });
+        const lines = wmicOutput.split('\n').filter(l => l.trim() && !l.startsWith('Node'));
+        if (lines.length > 0) {
+          const values = lines[0].split(',');
+          if (values.length >= 3) {
+            ramMB = Math.round(parseInt(values[2] || 0) / (1024 * 1024));
+          }
+        }
+      } catch (wmicError) {
+        ramMB = configuredRAM * 1024;
+      }
+    }
+  } else {
+    try {
+      const psOutput = await new Promise((resolve, reject) => {
+        execFile('ps', ['-p', `${pid}`, '-o', '%cpu,rss', '--no-headers'], { timeout: 3000 }, (error, stdout) => {
+          if (error) return reject(error);
+          resolve(stdout);
+        });
+      });
+      const parts = psOutput.trim().split(/\s+/);
+      if (parts.length >= 2) {
+        cpuPercent = parseFloat(parts[0]) || 0;
+        ramMB = Math.round(parseInt(parts[1]) / 1024);
+      }
+    } catch (error) {
+      ramMB = configuredRAM * 1024;
+    }
+  }
+
+  return { success: true, cpu: cpuPercent, ram: ramMB / 1024, ramMB, configuredRAM };
+}
+
+async function refreshUsageCache() {
+  const configs = await loadServerConfigs();
+  const serverNames = new Set([
+    ...serverProcesses.keys(),
+    ...Object.keys(configs).filter(name => configs[name]?.pid && isPidAlive(configs[name].pid))
+  ]);
+
+  if (serverNames.size === 0) {
+    aggregateUsageCache = {
+      totalCPU: 0,
+      totalRAM: 0,
+      totalRAMMB: 0,
+      serverUsages: {},
+      timestamp: Date.now()
+    };
+    return;
+  }
+
+  let totalCPU = 0;
+  let totalRAM = 0;
+  let totalRAMMB = 0;
+  const serverUsages = {};
+
+  const usageResults = await Promise.all(
+    Array.from(serverNames).map(async (serverName) => {
+      const config = configs[serverName];
+      const configuredRAM = config?.ramGB || 4;
+      const pid = serverProcesses.get(serverName)?.pid || config?.pid;
+      if (!pid || !isPidAlive(pid)) {
+        return null;
+      }
+      const usage = await computeServerUsage(serverName, pid, configuredRAM);
+      return { serverName, usage };
+    })
+  );
+
+  const now = Date.now();
+  for (const result of usageResults) {
+    if (!result) continue;
+    serverUsageCache.set(result.serverName, { usage: result.usage, timestamp: now });
+    serverUsages[result.serverName] = result.usage;
+    totalCPU += result.usage.cpu || 0;
+    totalRAM += result.usage.ram || 0;
+    totalRAMMB += result.usage.ramMB || 0;
+  }
+
+  aggregateUsageCache = {
+    totalCPU,
+    totalRAM,
+    totalRAMMB,
+    serverUsages,
+    timestamp: Date.now()
+  };
+}
+
 async function getServerUsage(serverName) {
   try {
     // Get configured RAM from server config (stored when server was created/started)
@@ -1620,86 +1845,17 @@ async function getServerUsage(serverName) {
       return { success: true, cpu: 0, ram: configuredRAM, ramMB: configuredRAMMB, configuredRAM };
     }
 
-    // Check cache first
+    // Prefer cached results to avoid heavy polling on the IPC thread
     const cached = serverUsageCache.get(serverName);
-    if (cached && (Date.now() - cached.timestamp) < USAGE_CACHE_TTL) {
+    if (cached) {
       return { ...cached.usage, configuredRAM };
     }
-
-    let cpuPercent = 0;
-    let ramMB = configuredRAMMB; // Default to configured RAM
-    const now = Date.now();
-
-    if (os.platform() === 'win32') {
-      // Windows: Sum RAM/CPU across Java parent + child processes
-      try {
-        const cmd = `powershell -NoProfile -Command "$pids = @(${pid}); $pids += (Get-CimInstance Win32_Process -Filter \\"ParentProcessId=${pid}\\" | Select-Object -ExpandProperty ProcessId); $procs = Get-Process -Id $pids -ErrorAction SilentlyContinue; if ($procs) { $totalWorkingSet = ($procs | Measure-Object -Property WorkingSet64 -Sum).Sum; $totalCpuMs = ($procs | ForEach-Object { $_.TotalProcessorTime.TotalMilliseconds } | Measure-Object -Sum).Sum; @{ WorkingSet = $totalWorkingSet; ProcessorTime = $totalCpuMs } | ConvertTo-Json }"`;
-        const output = execSync(cmd, { encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'], timeout: 3000 });
-
-        if (output && output.trim()) {
-          const processInfo = JSON.parse(output);
-
-          if (processInfo) {
-            ramMB = Math.round((processInfo.WorkingSet || 0) / (1024 * 1024));
-
-            // Calculate CPU percentage based on time difference
-            const currentCpuTime = processInfo.ProcessorTime || 0;
-            const tracking = cpuUsageTracking.get(serverName);
-
-            if (tracking && tracking.lastCheckTime) {
-              const timeDiff = (now - tracking.lastCheckTime) / 1000; // seconds
-              const cpuTimeDiff = (currentCpuTime - tracking.lastCpuTime) / 1000; // seconds
-
-              if (timeDiff > 0) {
-                const cpuCores = os.cpus().length;
-                cpuPercent = Math.min(100, (cpuTimeDiff / timeDiff / cpuCores) * 100);
-                cpuPercent = Math.max(0, cpuPercent);
-              }
-            }
-
-            cpuUsageTracking.set(serverName, {
-              lastCpuTime: currentCpuTime,
-              lastCheckTime: now
-            });
-          }
-        }
-      } catch (error) {
-        // Fallback: try wmic for RAM only (CPU calculation requires tracking)
-        try {
-          const wmicCmd = `wmic process where ProcessId=${pid} get WorkingSetSize /format:csv`;
-          const wmicOutput = execSync(wmicCmd, { encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'], timeout: 3000 });
-          const lines = wmicOutput.split('\n').filter(l => l.trim() && !l.startsWith('Node'));
-          if (lines.length > 0) {
-            const values = lines[0].split(',');
-            if (values.length >= 3) {
-              ramMB = Math.round(parseInt(values[2] || 0) / (1024 * 1024));
-            }
-          }
-        } catch (wmicError) {
-          ramMB = configuredRAMMB;
-        }
-      }
-    } else {
-      // Linux/macOS: Use ps (gives CPU percentage directly)
-      try {
-        const psOutput = execSync(`ps -p ${pid} -o %cpu,rss --no-headers`, { encoding: 'utf8', timeout: 3000 });
-        const parts = psOutput.trim().split(/\s+/);
-        if (parts.length >= 2) {
-          cpuPercent = parseFloat(parts[0]) || 0;
-          ramMB = Math.round(parseInt(parts[1]) / 1024); // RSS is in KB
-        }
-      } catch (error) {
-        // Process might have exited, use configured RAM
-        ramMB = configuredRAMMB;
-      }
-    }
-
-    const result = { success: true, cpu: cpuPercent, ram: ramMB / 1024, ramMB, configuredRAM };
+    const result = await computeServerUsage(serverName, pid, configuredRAM);
     
     // Cache the result
     serverUsageCache.set(serverName, {
       usage: result,
-      timestamp: now
+      timestamp: Date.now()
     });
 
     return result;
@@ -1714,31 +1870,11 @@ async function getServerUsage(serverName) {
 // Get aggregate usage for all servers
 async function getAllServersUsage() {
   try {
-    const servers = await listServers();
-    let totalCPU = 0;
-    let totalRAM = 0;
-    let totalRAMMB = 0;
-    const serverUsages = {};
-
-    for (const server of servers) {
-      if (server.status === 'RUNNING') {
-        const usage = await getServerUsage(server.name);
-        if (usage.success) {
-          totalCPU += usage.cpu || 0;
-          totalRAM += usage.ram || 0;
-          totalRAMMB += usage.ramMB || 0;
-          serverUsages[server.name] = usage;
-        }
-      }
+    if (Date.now() - aggregateUsageCache.timestamp < 1000) {
+      return { success: true, ...aggregateUsageCache };
     }
-
-    return {
-      success: true,
-      totalCPU,
-      totalRAM,
-      totalRAMMB,
-      serverUsages
-    };
+    // Return cached snapshot even if slightly stale to keep UI smooth
+    return { success: true, ...aggregateUsageCache };
   } catch (error) {
     return { success: false, error: error.message };
   }
@@ -2590,7 +2726,12 @@ module.exports = {
   completeSetup,
   resetSetup,
   ensureDirectories,
+  isPortAvailable,
+  findAvailablePort,
   showFolderDialog,
   getHexnodeDir
 };
+
+// Start background usage polling
+startUsageRefreshLoop();
 

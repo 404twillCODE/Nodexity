@@ -35,7 +35,8 @@ declare global {
         resetSetup: () => Promise<void>;
         showFolderDialog: (options: { title: string; defaultPath?: string }) => Promise<{ success: boolean; path?: string; canceled?: boolean }>;
         listServers: () => Promise<Server[]>;
-        createServer: (serverName: string, serverType: string, version?: string | null, ramGB?: number, manualJarPath?: string | null, displayName?: string | null) => Promise<{ success: boolean; error?: string; path?: string; jarFile?: string; version?: string; build?: number }>;
+        findAvailablePort: (startPort: number) => Promise<number | null>;
+        createServer: (serverName: string, serverType: string, version?: string | null, ramGB?: number, port?: number | null, manualJarPath?: string | null, displayName?: string | null) => Promise<{ success: boolean; error?: string; path?: string; jarFile?: string; version?: string; build?: number }>;
         startServer: (serverName: string, ramGB?: number) => Promise<{ success: boolean; error?: string; pid?: number }>;
         stopServer: (serverName: string) => Promise<{ success: boolean; error?: string }>;
         restartServer: (serverName: string, ramGB?: number) => Promise<{ success: boolean; error?: string; pid?: number }>;
@@ -99,18 +100,32 @@ export function useServerManager() {
     if (!window.electronAPI) return;
     try {
       const serverList = await window.electronAPI.server.listServers();
-      setServers(serverList);
+      setServers(prev => {
+        if (prev.length !== serverList.length) return serverList;
+        const isSame = prev.every((server, index) => {
+          const next = serverList[index];
+          return (
+            server.id === next.id &&
+            server.name === next.name &&
+            server.status === next.status &&
+            server.version === next.version &&
+            server.port === next.port &&
+            (server.ramGB || 0) === (next.ramGB || 0)
+          );
+        });
+        return isSame ? prev : serverList;
+      });
     } catch (error) {
       console.error('Failed to load servers:', error);
     } finally {
-      setLoading(false);
+      setLoading(prev => (prev ? false : prev));
     }
   }, []);
 
-  const createServer = useCallback(async (serverName: string = 'default', serverType: string = 'paper', version?: string | null, ramGB: number = 4, manualJarPath?: string | null, displayName?: string | null) => {
+  const createServer = useCallback(async (serverName: string = 'default', serverType: string = 'paper', version?: string | null, ramGB: number = 4, port?: number | null, manualJarPath?: string | null, displayName?: string | null) => {
     if (!window.electronAPI) return { success: false, error: 'Electron API not available' };
     try {
-      const result = await window.electronAPI.server.createServer(serverName, serverType, version, ramGB, manualJarPath, displayName);
+      const result = await window.electronAPI.server.createServer(serverName, serverType, version, ramGB, port, manualJarPath, displayName);
       if (result.success) {
         await loadServers();
       }

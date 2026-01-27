@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import { useState, useEffect, useRef } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import ServerCard from "./ServerCard";
 import { useServerManager } from "../hooks/useServerManager";
 import JavaStatusIndicator from "./JavaStatusIndicator";
@@ -10,9 +10,25 @@ interface ServerListProps {
   onServerClick?: (serverName: string) => void;
 }
 
-export default function ServerList({ onServerClick }: ServerListProps) {
-  const { servers, startServer, stopServer, loading, getAllServersUsage, getServersDiskUsage } = useServerManager();
-  const { notify } = useToast();
+const AggregateStatsPanel = memo(function AggregateStatsPanel({
+  hasServers,
+  getAllServersUsage,
+  getServersDiskUsage,
+  getSystemContext,
+  isScrollingRef,
+  onReady,
+}: {
+  hasServers: boolean;
+  getAllServersUsage: () => Promise<{ success: boolean; totalCPU?: number; totalRAM?: number; totalRAMMB?: number }>;
+  getServersDiskUsage: () => Promise<{ success: boolean; totalSizeGB?: number }>;
+  getSystemContext: () => Promise<{
+    memory?: { totalGB: number; freeGB: number };
+    drives?: Array<{ letter: string; totalGB: number; usedGB: number }>;
+    serversDirectory?: string;
+  }>;
+  isScrollingRef: React.MutableRefObject<boolean>;
+  onReady?: () => void;
+}) {
   const [aggregateStats, setAggregateStats] = useState<{
     totalCPU: number;
     totalRAM: number;
@@ -20,40 +36,15 @@ export default function ServerList({ onServerClick }: ServerListProps) {
     totalDiskGB: number;
   } | null>(null);
   const [diskUsageGB, setDiskUsageGB] = useState<number>(0);
+  const [diskTotalGB, setDiskTotalGB] = useState<number>(0);
+  const [diskUsedGB, setDiskUsedGB] = useState<number>(0);
+  const [systemAvailableRAMMB, setSystemAvailableRAMMB] = useState<number>(0);
   const lastStatsRef = useRef<{ cpu: number; ramMB: number; diskGB: number } | null>(null);
   const usageIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const diskIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const scrollRef = useRef<HTMLDivElement | null>(null);
-  const isScrollingRef = useRef(false);
-  const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  const handleStart = async (serverName: string) => {
-    const server = servers.find(s => s.name === serverName);
-    const ramGB = server?.ramGB || 4;
-    const result = await startServer(serverName, ramGB);
-    if (!result.success) {
-      notify({
-        type: "error",
-        title: "Start failed",
-        message: result.error || "Unable to start the server."
-      });
-    }
-  };
-
-  const handleStop = async (serverName: string) => {
-    const result = await stopServer(serverName);
-    if (!result.success) {
-      notify({
-        type: "error",
-        title: "Stop failed",
-        message: result.error || "Unable to stop the server."
-      });
-    }
-  };
-
-  // Load aggregate stats
   useEffect(() => {
-    if (servers.length === 0) {
+    if (!hasServers) {
       setAggregateStats(null);
       return;
     }
@@ -81,7 +72,10 @@ export default function ServerList({ onServerClick }: ServerListProps) {
               ramMB: nextStats.totalRAMMB,
               diskGB: nextStats.totalDiskGB
             };
-            requestAnimationFrame(() => setAggregateStats(nextStats));
+            requestAnimationFrame(() => {
+              setAggregateStats(nextStats);
+              onReady?.();
+            });
           }
         }
       } catch (error) {
@@ -100,8 +94,34 @@ export default function ServerList({ onServerClick }: ServerListProps) {
       }
     };
 
+    const loadSystemContext = async () => {
+      try {
+        const info = await getSystemContext();
+        if (info?.memory?.freeGB) {
+          setSystemAvailableRAMMB(info.memory.freeGB * 1024);
+        } else if (info?.memory?.totalGB) {
+          setSystemAvailableRAMMB(info.memory.totalGB * 1024);
+        }
+
+        if (info?.drives?.length) {
+          const serversDir = info.serversDirectory || "";
+          const match = info.drives.find((drive) => {
+            if (!drive.letter) return false;
+            return serversDir.toLowerCase().startsWith(drive.letter.toLowerCase());
+          });
+          const total = match?.totalGB ?? info.drives.reduce((sum, drive) => sum + (drive.totalGB || 0), 0);
+          const used = match?.usedGB ?? info.drives.reduce((sum, drive) => sum + (drive.usedGB || 0), 0);
+          setDiskTotalGB(total);
+          setDiskUsedGB(used);
+        }
+      } catch (error) {
+        console.error('Failed to load system context:', error);
+      }
+    };
+
     loadUsageStats();
     loadDiskStats();
+    loadSystemContext();
 
     if (usageIntervalRef.current) clearInterval(usageIntervalRef.current);
     if (diskIntervalRef.current) clearInterval(diskIntervalRef.current);
@@ -113,7 +133,126 @@ export default function ServerList({ onServerClick }: ServerListProps) {
       if (usageIntervalRef.current) clearInterval(usageIntervalRef.current);
       if (diskIntervalRef.current) clearInterval(diskIntervalRef.current);
     };
-  }, [servers, getAllServersUsage, getServersDiskUsage, diskUsageGB]);
+  }, [hasServers, getAllServersUsage, getServersDiskUsage, getSystemContext, diskUsageGB, isScrollingRef]);
+
+  if (!aggregateStats) return null;
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="border border-border bg-background-secondary/40 rounded p-6 mb-6"
+    >
+      <div className="grid gap-4 sm:grid-cols-3">
+        <div className="rounded border border-border bg-background-secondary/60 px-5 py-4">
+          <div className="flex items-center gap-2 text-xs text-text-muted font-mono uppercase tracking-wider mb-2">
+            <svg className="h-4 w-4 text-accent" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+              <rect x="7" y="7" width="10" height="10" rx="2" />
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9 1v4M15 1v4M9 19v4M15 19v4M1 9h4M1 15h4M19 9h4M19 15h4" />
+            </svg>
+            CPU Usage
+          </div>
+          <div className="text-2xl font-semibold text-text-primary font-mono">
+            {aggregateStats.totalCPU.toFixed(1)}%
+          </div>
+          <div className="mt-3 h-1.5 w-full rounded-full bg-background-secondary">
+            <div
+              className="h-full rounded-full bg-accent transition-all"
+              style={{ width: `${Math.min(100, aggregateStats.totalCPU)}%` }}
+            />
+          </div>
+        </div>
+        <div className="rounded border border-border bg-background-secondary/60 px-5 py-4">
+          <div className="flex items-center gap-2 text-xs text-text-muted font-mono uppercase tracking-wider mb-2">
+            <svg className="h-4 w-4 text-accent" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+              <rect x="3" y="7" width="18" height="10" rx="2" />
+              <path strokeLinecap="round" strokeLinejoin="round" d="M7 11h2M11 11h2M15 11h2" />
+            </svg>
+            RAM Usage
+          </div>
+          <div className="text-2xl font-semibold text-text-primary font-mono">
+            {aggregateStats.totalRAMMB.toFixed(0)} MB
+          </div>
+          <div className="text-xs text-text-muted font-mono mt-1">
+            ({aggregateStats.totalRAM.toFixed(2)} GB)
+          </div>
+          <div className="mt-3 h-1.5 w-full rounded-full bg-background-secondary">
+            <div
+              className="h-full rounded-full bg-accent/80 transition-all"
+              style={{ width: `${Math.min(100, systemAvailableRAMMB ? (aggregateStats.totalRAMMB / systemAvailableRAMMB) * 100 : 0)}%` }}
+            />
+          </div>
+        </div>
+        <div className="rounded border border-border bg-background-secondary/60 px-5 py-4">
+          <div className="flex items-center gap-2 text-xs text-text-muted font-mono uppercase tracking-wider mb-2">
+            <svg className="h-4 w-4 text-accent" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+              <rect x="3" y="5" width="18" height="14" rx="2" />
+              <circle cx="12" cy="12" r="3" />
+              <circle cx="12" cy="12" r="1" />
+            </svg>
+            Disk Usage
+          </div>
+          <div className="text-2xl font-semibold text-text-primary font-mono">
+            {aggregateStats.totalDiskGB.toFixed(2)} GB
+          </div>
+          <div className="mt-3 h-1.5 w-full rounded-full bg-background-secondary">
+            <div
+              className="h-full rounded-full bg-accent/60 transition-all"
+              style={{ width: `${Math.min(100, diskTotalGB ? (diskUsedGB / diskTotalGB) * 100 : 0)}%` }}
+            />
+          </div>
+        </div>
+      </div>
+    </motion.div>
+  );
+});
+
+export default function ServerList({ onServerClick }: ServerListProps) {
+  const { servers, startServer, stopServer, loading, getAllServersUsage, getServersDiskUsage } = useServerManager();
+  const getSystemContext = async () => {
+    if (!window.electronAPI) return {};
+    const [info, settings] = await Promise.all([
+      window.electronAPI.server.getSystemInfo(),
+      window.electronAPI.server.getAppSettings()
+    ]);
+    return {
+      ...info,
+      serversDirectory: settings?.serversDirectory || ""
+    };
+  };
+  const { notify } = useToast();
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const isScrollingRef = useRef(false);
+  const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const [statsReady, setStatsReady] = useState(false);
+
+  const handleStart = async (serverName: string) => {
+    const server = servers.find(s => s.name === serverName);
+    const ramGB = server?.ramGB || 4;
+    const result = await startServer(serverName, ramGB);
+    if (!result.success) {
+      notify({
+        type: "error",
+        title: "Start failed",
+        message: result.error || "Unable to start the server."
+      });
+    }
+  };
+
+  const handleStop = async (serverName: string) => {
+    const result = await stopServer(serverName);
+    if (!result.success) {
+      notify({
+        type: "error",
+        title: "Stop failed",
+        message: result.error || "Unable to stop the server."
+      });
+    }
+  };
+
+  useEffect(() => {
+    setStatsReady(false);
+  }, [servers.length]);
 
   useEffect(() => {
     const container = scrollRef.current;
@@ -165,41 +304,15 @@ export default function ServerList({ onServerClick }: ServerListProps) {
         </div>
       </motion.div>
 
-      {/* Aggregate Stats */}
-      {!loading && servers.length > 0 && aggregateStats && (
-        <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="system-card p-6 mb-6"
-        >
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-6">
-              <div>
-                <div className="text-xs text-text-muted font-mono uppercase tracking-wider mb-1">CPU Usage</div>
-                <div className="text-lg font-semibold text-text-primary font-mono">
-                  {aggregateStats.totalCPU.toFixed(1)}%
-                </div>
-              </div>
-              <div className="h-12 w-px bg-border"></div>
-              <div>
-                <div className="text-xs text-text-muted font-mono uppercase tracking-wider mb-1">RAM Usage</div>
-                <div className="text-lg font-semibold text-text-primary font-mono">
-                  {aggregateStats.totalRAMMB.toFixed(0)} MB
-                </div>
-                <div className="text-xs text-text-muted font-mono">
-                  ({aggregateStats.totalRAM.toFixed(2)} GB)
-                </div>
-              </div>
-              <div className="h-12 w-px bg-border"></div>
-              <div>
-                <div className="text-xs text-text-muted font-mono uppercase tracking-wider mb-1">Disk Usage</div>
-                <div className="text-lg font-semibold text-text-primary font-mono">
-                  {aggregateStats.totalDiskGB.toFixed(2)} GB
-                </div>
-              </div>
-            </div>
-          </div>
-        </motion.div>
+      {!loading && servers.length > 0 && (
+        <AggregateStatsPanel
+          hasServers={servers.length > 0}
+          getAllServersUsage={getAllServersUsage}
+          getServersDiskUsage={getServersDiskUsage}
+          getSystemContext={getSystemContext}
+          isScrollingRef={isScrollingRef}
+          onReady={() => setStatsReady(true)}
+        />
       )}
 
       {loading ? (
@@ -227,6 +340,14 @@ export default function ServerList({ onServerClick }: ServerListProps) {
             </p>
           </div>
           <CreateServerButton />
+        </motion.div>
+      ) : !statsReady ? (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          className="system-card p-6 text-center"
+        >
+          <div className="text-text-muted font-mono text-sm">Loading server stats...</div>
         </motion.div>
       ) : (
         <div className="space-y-4">

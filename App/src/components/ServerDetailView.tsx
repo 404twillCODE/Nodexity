@@ -1,6 +1,7 @@
 import { motion } from "framer-motion";
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { useServerManager } from "../hooks/useServerManager";
+import { useToast } from "./ToastProvider";
 import StatusBadge from "./StatusBadge";
 import FileEditor from "./FileEditor";
 import PluginManager from "./PluginManager";
@@ -23,6 +24,7 @@ interface ConsoleLine {
 
 export default function ServerDetailView({ serverName, onBack }: ServerDetailViewProps) {
   const { servers, sendCommand, startServer, stopServer, restartServer, killServer, deleteServer, getServerUsage, updateServerRAM, refreshServers, loading } = useServerManager();
+  const { notify } = useToast();
   const [isRestarting, setIsRestarting] = useState(false);
   const [showKillConfirm, setShowKillConfirm] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -420,14 +422,22 @@ export default function ServerDetailView({ serverName, onBack }: ServerDetailVie
     const ramGB = server.ramGB || 4;
     const result = await startServer(serverName, ramGB);
     if (!result.success) {
-      alert(`Failed to start server: ${result.error}`);
+      notify({
+        type: "error",
+        title: "Start failed",
+        message: result.error || "Unable to start the server."
+      });
     }
   };
 
   const handleStop = async () => {
     const result = await stopServer(serverName);
     if (!result.success) {
-      alert(`Failed to stop server: ${result.error}`);
+      notify({
+        type: "error",
+        title: "Stop failed",
+        message: result.error || "Unable to stop the server."
+      });
     }
   };
 
@@ -436,7 +446,11 @@ export default function ServerDetailView({ serverName, onBack }: ServerDetailVie
     const ramGB = server?.ramGB || 4;
     const result = await restartServer(serverName, ramGB);
     if (!result.success) {
-      alert(`Failed to restart server: ${result.error}`);
+      notify({
+        type: "error",
+        title: "Restart failed",
+        message: result.error || "Unable to restart the server."
+      });
     }
     setIsRestarting(false);
   };
@@ -449,7 +463,11 @@ export default function ServerDetailView({ serverName, onBack }: ServerDetailVie
     
     const result = await killServer(serverName);
     if (!result.success) {
-      alert(`Failed to kill server: ${result.error}`);
+      notify({
+        type: "error",
+        title: "Kill failed",
+        message: result.error || "Unable to kill the server."
+      });
     }
     setShowKillConfirm(false);
   };
@@ -469,7 +487,11 @@ export default function ServerDetailView({ serverName, onBack }: ServerDetailVie
     if (result.success) {
       onBack(); // Go back to server list
     } else {
-      alert(`Failed to delete server: ${result.error}`);
+      notify({
+        type: "error",
+        title: "Delete failed",
+        message: result.error || "Unable to delete the server."
+      });
       setShowDeleteConfirm(false);
     }
   };
@@ -921,9 +943,17 @@ export default function ServerDetailView({ serverName, onBack }: ServerDetailVie
                         if (result.success) {
                           // Refresh servers to get updated RAM value
                           await refreshServers();
-                          alert(`RAM allocation updated to ${ramGB}GB. This will take effect on the next server start.`);
+                          notify({
+                            type: "success",
+                            title: "RAM updated",
+                            message: `Allocation set to ${ramGB}GB. Applies on next start.`
+                          });
                         } else {
-                          alert(`Failed to update RAM: ${result.error}`);
+                          notify({
+                            type: "error",
+                            title: "RAM update failed",
+                            message: result.error || "Unable to update RAM."
+                          });
                         }
                         setSavingRAM(false);
                       }}

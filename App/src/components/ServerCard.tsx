@@ -1,7 +1,8 @@
 import { motion } from "framer-motion";
-import { useState, useEffect } from "react";
+import { memo, useState, useEffect } from "react";
 import StatusBadge from "./StatusBadge";
 import { useServerManager } from "../hooks/useServerManager";
+import { useToast } from "./ToastProvider";
 
 interface Server {
   id: string;
@@ -19,8 +20,9 @@ interface ServerCardProps {
   onClick?: () => void;
 }
 
-export default function ServerCard({ server, onStart, onStop, onClick }: ServerCardProps) {
+const ServerCard = memo(function ServerCard({ server, onStart, onStop, onClick }: ServerCardProps) {
   const { restartServer, killServer, getPlayerCount } = useServerManager();
+  const { notify } = useToast();
   const [playerCount, setPlayerCount] = useState<{ online: number; max: number } | null>(null);
   const [isRestarting, setIsRestarting] = useState(false);
   const [showKillConfirm, setShowKillConfirm] = useState(false);
@@ -54,7 +56,11 @@ export default function ServerCard({ server, onStart, onStop, onClick }: ServerC
     const ramGB = server.ramGB || 4;
     const result = await restartServer(server.name, ramGB);
     if (!result.success) {
-      alert(`Failed to restart server: ${result.error}`);
+      notify({
+        type: "error",
+        title: "Restart failed",
+        message: result.error || "Unable to restart the server."
+      });
     }
     setIsRestarting(false);
   };
@@ -68,7 +74,11 @@ export default function ServerCard({ server, onStart, onStop, onClick }: ServerC
     
     const result = await killServer(server.name);
     if (!result.success) {
-      alert(`Failed to kill server: ${result.error}`);
+      notify({
+        type: "error",
+        title: "Kill failed",
+        message: result.error || "Unable to kill the server."
+      });
     }
     setShowKillConfirm(false);
   };
@@ -194,4 +204,15 @@ export default function ServerCard({ server, onStart, onStop, onClick }: ServerC
       </div>
     </motion.div>
   );
-}
+}, (prev, next) => {
+  return (
+    prev.server.id === next.server.id &&
+    prev.server.name === next.server.name &&
+    prev.server.status === next.server.status &&
+    prev.server.version === next.server.version &&
+    prev.server.port === next.server.port &&
+    (prev.server.ramGB || 0) === (next.server.ramGB || 0)
+  );
+});
+
+export default ServerCard;

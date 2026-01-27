@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
+import { useToast } from "./ToastProvider";
 
 interface ServerPropertiesEditorProps {
   serverName: string;
@@ -10,6 +11,7 @@ export default function ServerPropertiesEditor({ serverName }: ServerPropertiesE
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [hasChanges, setHasChanges] = useState(false);
+  const { notify } = useToast();
 
   useEffect(() => {
     loadProperties();
@@ -43,12 +45,24 @@ export default function ServerPropertiesEditor({ serverName }: ServerPropertiesE
       const result = await window.electronAPI.server.updateServerProperties(serverName, properties);
       if (result.success) {
         setHasChanges(false);
-        alert('Server properties saved successfully! Restart the server for changes to take effect.');
+        notify({
+          type: "success",
+          title: "Properties saved",
+          message: "Restart the server for changes to take effect."
+        });
       } else {
-        alert(`Failed to save properties: ${result.error}`);
+        notify({
+          type: "error",
+          title: "Save failed",
+          message: result.error || "Unable to save properties."
+        });
       }
     } catch (error: any) {
-      alert(`Error saving properties: ${error.message}`);
+      notify({
+        type: "error",
+        title: "Save failed",
+        message: error.message || "Unable to save properties."
+      });
     } finally {
       setSaving(false);
     }

@@ -1,6 +1,7 @@
 import { motion } from "framer-motion";
 import { useState, useEffect, useRef } from "react";
 import ToggleSwitch from "./ToggleSwitch";
+import { useToast } from "./ToastProvider";
 
 export default function SettingsView() {
   const [activeTab, setActiveTab] = useState<'general' | 'server' | 'console' | 'dev'>('general');
@@ -9,6 +10,7 @@ export default function SettingsView() {
   const [devMode, setDevMode] = useState(false);
   const [maxRAM, setMaxRAM] = useState(32); // Default, will be updated from system
   const ramSliderRef = useRef<HTMLDivElement>(null);
+  const { notify } = useToast();
 
   useEffect(() => {
     loadSettings();
@@ -133,7 +135,11 @@ export default function SettingsView() {
       window.location.reload();
     } catch (error) {
       console.error('Failed to reset setup:', error);
-      alert('Failed to reset setup. Please try again.');
+      notify({
+        type: "error",
+        title: "Reset failed",
+        message: "Failed to reset setup. Please try again."
+      });
     }
   };
 

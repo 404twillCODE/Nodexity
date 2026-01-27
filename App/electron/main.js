@@ -171,8 +171,12 @@ ipcMain.handle('list-servers', async () => {
   return await serverManager.listServers();
 });
 
-ipcMain.handle('create-server', async (event, serverName, serverType, version, ramGB, manualJarPath, displayName) => {
-  return await serverManager.createServer(serverName, serverType, version, ramGB, manualJarPath, displayName);
+ipcMain.handle('find-available-port', async (event, startPort) => {
+  return await serverManager.findAvailablePort(startPort);
+});
+
+ipcMain.handle('create-server', async (event, serverName, serverType, version, ramGB, port, manualJarPath, displayName) => {
+  return await serverManager.createServer(serverName, serverType, version, ramGB, port, manualJarPath, displayName);
 });
 
 ipcMain.handle('start-server', async (event, serverName, ramGB) => {
