@@ -330,11 +330,51 @@ async function getSystemInfo() {
       console.error('Failed to get storage info:', error);
     }
 
+    let cpuTempCelsius = null;
+    if (os.platform() === 'win32') {
+      const tryTemp = async (script) => {
+        try {
+          const out = await execFilePromise('powershell', ['-NoProfile', '-Command', script], { timeout: 4000, windowsHide: true });
+          const v = parseFloat(out?.trim());
+          if (Number.isFinite(v) && v > -100 && v < 200) return v;
+        } catch (e) {}
+        return null;
+      };
+      cpuTempCelsius = await tryTemp(
+        "try { $z = Get-CimInstance -Namespace root/wmi -ClassName MSAcpi_ThermalZoneTemperature -EA SilentlyContinue | Select-Object -First 1; if ($z) { [math]::Round(($z.CurrentTemperature/10.0)-273.15, 1) } } catch {}"
+      );
+      if (cpuTempCelsius == null) {
+        cpuTempCelsius = await tryTemp(
+          "try { $z = Get-WmiObject -Namespace root/wmi -Class MSAcpi_ThermalZoneTemperature -EA SilentlyContinue | Select-Object -First 1; if ($z) { [math]::Round(($z.CurrentTemperature/10.0)-273.15, 1) } } catch {}"
+        );
+      }
+    } else if (os.platform() === 'linux') {
+      try {
+        const thermalPaths = ['/sys/class/thermal/thermal_zone0/temp', '/sys/class/hwmon/hwmon0/temp1_input', '/sys/class/hwmon/hwmon1/temp1_input'];
+        for (const p of thermalPaths) {
+          try {
+            const buf = await fs.readFile(p, 'utf8');
+            const millideg = parseInt(buf.trim(), 10);
+            if (Number.isFinite(millideg)) {
+              const c = millideg / 1000;
+              if (c > -100 && c < 200) {
+                cpuTempCelsius = Math.round(c * 10) / 10;
+                break;
+              }
+            }
+          } catch (e) {
+            continue;
+          }
+        }
+      } catch (err) {}
+    }
+
     const payload = {
       cpu: {
         model: cpuModel,
         cores: cpuCores,
-        threads: cpuCores
+        threads: cpuCores,
+        tempCelsius: cpuTempCelsius
       },
       memory: {
         totalGB: totalMemoryGB,
@@ -2329,6 +2369,7 @@ async function listServers() {
             status: status, // Keep status as RUNNING, STOPPED, or STARTING
             port: config?.port || 25565,
             ramGB: config?.ramGB || 4,
+            serverType: config?.serverType || 'paper',
           });
         }
       }

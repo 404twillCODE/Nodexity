@@ -21,7 +21,7 @@ declare global {
         getBungeeCordVersions: () => Promise<string[]>;
         selectJarFile: () => Promise<{ success: boolean; path?: string; canceled?: boolean }>;
         getSystemInfo: () => Promise<{
-          cpu: { model: string; cores: number; threads: number };
+          cpu: { model: string; cores: number; threads: number; tempCelsius?: number | null };
           memory: { totalGB: number; freeGB: number; usedGB: number };
           drives: Array<{ letter: string; label: string; totalGB: number; freeGB: number; usedGB: number }>;
           platform: string;
@@ -74,6 +74,7 @@ export interface Server {
   status: 'RUNNING' | 'STOPPED' | 'STARTING';
   port: number;
   ramGB?: number;
+  serverType?: string;
 }
 
 export interface JavaStatus {

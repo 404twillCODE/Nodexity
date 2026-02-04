@@ -14,7 +14,7 @@ interface ServerDetailViewProps {
   onBack: () => void;
 }
 
-type Tab = "console" | "files" | "plugins" | "worlds" | "properties" | "settings";
+type Tab = "dashboard" | "console" | "files" | "plugins" | "worlds" | "properties" | "settings";
 
 interface ConsoleLine {
   id: string;
@@ -23,13 +23,40 @@ interface ConsoleLine {
   type?: 'stdout' | 'stderr' | 'command';
 }
 
+function MiniSparkline({ values, max, className }: { values: number[]; max: number; className?: string }) {
+  if (values.length < 2) return null;
+  const w = 200;
+  const h = 32;
+  const pad = 2;
+  const range = max > 0 ? max : 1;
+  const points = values
+    .map((v, i) => {
+      const x = pad + (i / Math.max(values.length - 1, 1)) * (w - pad * 2);
+      const y = h - pad - (Math.min(v, range) / range) * (h - pad * 2);
+      return `${x},${y}`;
+    })
+    .join(' ');
+  return (
+    <svg width="100%" viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" className={className}>
+      <polyline
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        points={points}
+      />
+    </svg>
+  );
+}
+
 export default function ServerDetailView({ serverName, onBack }: ServerDetailViewProps) {
-  const { servers, sendCommand, startServer, stopServer, restartServer, killServer, deleteServer, getServerUsage, updateServerRAM, refreshServers, loading } = useServerManager();
+  const { servers, sendCommand, startServer, stopServer, restartServer, killServer, deleteServer, getServerUsage, updateServerRAM, refreshServers, loading, getPlayerCount } = useServerManager();
   const { notify } = useToast();
   const [isRestarting, setIsRestarting] = useState(false);
   const [showKillConfirm, setShowKillConfirm] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [activeTab, setActiveTab] = useState<Tab>("console");
+  const [activeTab, setActiveTab] = useState<Tab>("dashboard");
   const [lines, setLines] = useState<ConsoleLine[]>([]);
   const [input, setInput] = useState("");
   const [autoScroll, setAutoScroll] = useState(true);
@@ -44,6 +71,9 @@ export default function ServerDetailView({ serverName, onBack }: ServerDetailVie
   const [commandSuggestions, setCommandSuggestions] = useState<string[]>([]);
   const [chatMode, setChatMode] = useState(false);
   const [supportsPlugins, setSupportsPlugins] = useState<boolean | null>(null);
+  const [systemInfo, setSystemInfo] = useState<{ cpu: { tempCelsius?: number | null }; memory: { totalGB: number; freeGB: number; usedGB: number } } | null>(null);
+  const [playerCount, setPlayerCount] = useState<{ online: number; max: number } | null>(null);
+  const [usageHistory, setUsageHistory] = useState<{ cpu: number[]; ramMB: number[] }>({ cpu: [], ramMB: [] });
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const searchTimeoutRef = useRef<NodeJS.Timeout>();
@@ -84,6 +114,43 @@ export default function ServerDetailView({ serverName, onBack }: ServerDetailVie
   const isRunning = server?.status === "RUNNING";
   const isStopped = server?.status === "STOPPED";
   const isStarting = server?.status === "STARTING";
+  // Build usage history for graphs when on dashboard
+  useEffect(() => {
+    if (activeTab !== 'dashboard' || !serverUsage) return;
+    setUsageHistory((prev) => {
+      const maxLen = 60;
+      const cpu = [...prev.cpu, serverUsage.cpu].slice(-maxLen);
+      const ramMB = [...prev.ramMB, serverUsage.ramMB].slice(-maxLen);
+      return { cpu, ramMB };
+    });
+  }, [activeTab, serverUsage?.cpu, serverUsage?.ramMB]);
+
+  // Load dashboard data when dashboard tab is active (system info, player count)
+  useEffect(() => {
+    if (activeTab !== 'dashboard') return;
+    let cancelled = false;
+    const load = async () => {
+      if (!window.electronAPI) return;
+      try {
+        const [info, players] = await Promise.all([
+          window.electronAPI.server.getSystemInfo(),
+          isRunning ? getPlayerCount(serverName) : Promise.resolve(null)
+        ]);
+        if (!cancelled && info) setSystemInfo(info);
+        if (!cancelled && players?.success && players.online !== undefined) {
+          setPlayerCount({ online: players.online, max: players.max ?? 0 });
+        } else if (!cancelled && !isRunning) setPlayerCount(null);
+      } catch (e) {
+        if (!cancelled) setSystemInfo(null);
+      }
+    };
+    load();
+    const interval = setInterval(load, 3000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [activeTab, serverName, isRunning, getPlayerCount]);
 
   // Initialize RAM from server
   useEffect(() => {
@@ -647,12 +714,9 @@ export default function ServerDetailView({ serverName, onBack }: ServerDetailVie
 
       {/* Tabs */}
       <div className="flex gap-2 px-6 pt-4 border-b border-border bg-background-secondary overflow-x-auto">
-        {(['console', 'files', 'plugins', 'worlds', 'properties', 'settings'] as Tab[])
+        {(['dashboard', 'console', 'files', 'plugins', 'worlds', 'properties', 'settings'] as Tab[])
           .filter(tab => {
-            // Only show plugins tab if server supports plugins
-            if (tab === 'plugins' && supportsPlugins === false) {
-              return false;
-            }
+            if (tab === 'plugins' && supportsPlugins === false) return false;
             return true;
           })
           .map((tab) => (
@@ -665,7 +729,8 @@ export default function ServerDetailView({ serverName, onBack }: ServerDetailVie
                 : 'text-text-secondary border-transparent hover:text-text-primary'
             }`}
           >
-            {tab === 'console' ? 'CONSOLE' : 
+            {tab === 'dashboard' ? 'DASHBOARD' :
+             tab === 'console' ? 'CONSOLE' :
              tab === 'files' ? 'FILES' :
              tab === 'plugins' ? 'PLUGINS' :
              tab === 'worlds' ? 'WORLDS' :
@@ -676,6 +741,81 @@ export default function ServerDetailView({ serverName, onBack }: ServerDetailVie
 
       {/* Content */}
       <div className="flex-1 overflow-hidden">
+        {activeTab === "dashboard" && (
+          <div className="h-full overflow-y-auto bg-background p-6 font-sans">
+            <div className="max-w-4xl space-y-6">
+              <h2 className="text-sm font-semibold text-text-primary uppercase tracking-wider border-b border-border pb-2">
+                This server
+              </h2>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="border border-border rounded-lg p-4 bg-background-secondary">
+                  <div className="text-xs text-text-muted uppercase tracking-wider mb-1">CPU</div>
+                  <div className="text-xl text-accent font-medium">
+                    {serverUsage ? `${serverUsage.cpu.toFixed(1)}%` : isRunning ? '—' : '0%'}
+                  </div>
+                  {usageHistory.cpu.length > 1 && (
+                    <MiniSparkline values={usageHistory.cpu} max={100} className="mt-2 h-8 text-accent" />
+                  )}
+                </div>
+                <div className="border border-border rounded-lg p-4 bg-background-secondary">
+                  <div className="text-xs text-text-muted uppercase tracking-wider mb-1">RAM (used)</div>
+                  <div className="text-xl text-accent font-medium">
+                    {serverUsage ? `${Math.round(serverUsage.ramMB)} MB` : isRunning ? '—' : '0 MB'}
+                  </div>
+                  {server?.ramGB != null && (
+                    <div className="text-xs text-text-muted mt-1">of {server.ramGB} GB allocated</div>
+                  )}
+                  {usageHistory.ramMB.length > 1 && (
+                    <MiniSparkline
+                      values={usageHistory.ramMB}
+                      max={server?.ramGB ? server.ramGB * 1024 : Math.max(...usageHistory.ramMB, 1)}
+                      className="mt-2 h-8 text-accent"
+                    />
+                  )}
+                </div>
+                <div className="border border-border rounded-lg p-4 bg-background-secondary">
+                  <div className="text-xs text-text-muted uppercase tracking-wider mb-1">RAM %</div>
+                  <div className="text-xl text-accent font-medium">
+                    {serverUsage && server?.ramGB
+                      ? `${((serverUsage.ramMB / (server.ramGB * 1024)) * 100).toFixed(1)}%`
+                      : isRunning ? '—' : '0%'}
+                  </div>
+                </div>
+                <div className="border border-border rounded-lg p-4 bg-background-secondary">
+                  <div className="text-xs text-text-muted uppercase tracking-wider mb-1">Players</div>
+                  <div className="text-xl text-accent font-medium">
+                    {playerCount != null ? `${playerCount.online} / ${playerCount.max}` : isRunning ? '—' : '0 / 0'}
+                  </div>
+                </div>
+              </div>
+
+              <h2 className="text-sm font-semibold text-text-primary uppercase tracking-wider border-b border-border pb-2 mt-8">
+                System
+              </h2>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {systemInfo && (
+                  <>
+                    <div className="border border-border rounded-lg p-4 bg-background-secondary">
+                      <div className="text-xs text-text-muted uppercase tracking-wider mb-1">System memory</div>
+                      <div className="text-xl text-accent font-medium">
+                        {systemInfo.memory.usedGB} / {systemInfo.memory.totalGB} GB
+                      </div>
+                    </div>
+                    <div className="border border-border rounded-lg p-4 bg-background-secondary">
+                      <div className="text-xs text-text-muted uppercase tracking-wider mb-1">CPU temp</div>
+                      <div className="text-xl text-accent font-medium">
+                        {systemInfo.cpu.tempCelsius != null ? `${systemInfo.cpu.tempCelsius} °C` : '—'}
+                      </div>
+                    </div>
+                  </>
+                )}
+                {!systemInfo && (
+                  <div className="text-text-muted text-sm">Loading system info…</div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
         {activeTab === "console" && (
           <div className="h-full flex flex-col bg-background">
             {/* Search and Filter Bar */}
