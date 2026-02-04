@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 
 declare global {
   interface Window {
@@ -60,6 +60,8 @@ declare global {
         getServersDiskUsage: () => Promise<{ success: boolean; totalSize?: number; totalSizeGB?: number; serverSizes?: Record<string, number>; error?: string }>;
         onServerLog: (callback: (data: { serverName: string; type: 'stdout' | 'stderr'; data: string }) => void) => void;
         removeServerLogListener: () => void;
+        onAppSettingsUpdated: (callback: (data: any) => void) => () => void;
+        onUpdateAvailable: (callback: (data: { version: string; url: string }) => void) => () => void;
       };
     };
   }
@@ -84,6 +86,66 @@ export function useServerManager() {
   const [servers, setServers] = useState<Server[]>([]);
   const [javaStatus, setJavaStatus] = useState<JavaStatus>({ installed: false, version: null, loading: true });
   const [loading, setLoading] = useState(true);
+  const [appSettings, setAppSettings] = useState<any>({});
+  const [refreshMs, setRefreshMs] = useState(2000);
+  const prevServersRef = useRef<Server[]>([]);
+  const userStopRef = useRef<Map<string, number>>(new Map());
+  const permissionRequestedRef = useRef(false);
+
+  const markUserStop = (serverName: string) => {
+    userStopRef.current.set(serverName, Date.now());
+  };
+
+  const wasUserStop = (serverName: string) => {
+    const timestamp = userStopRef.current.get(serverName);
+    if (!timestamp) return false;
+    if (Date.now() - timestamp < 15000) return true;
+    userStopRef.current.delete(serverName);
+    return false;
+  };
+
+  const notifyIfAllowed = useCallback((title: string, body: string) => {
+    if (!appSettings?.notifications) return;
+    if (Notification.permission === 'default' && !permissionRequestedRef.current) {
+      permissionRequestedRef.current = true;
+      Notification.requestPermission().then((permission) => {
+        if (permission === 'granted') {
+          new Notification(title, { body });
+        }
+      });
+      return;
+    }
+    if (Notification.permission === 'granted') {
+      new Notification(title, { body });
+    }
+  }, [appSettings?.notifications]);
+
+  useEffect(() => {
+    const loadSettings = async () => {
+      if (!window.electronAPI) return;
+      try {
+        const settings = await window.electronAPI.server.getAppSettings();
+        setAppSettings(settings || {});
+        const nextRate = Math.max(1, Math.min(10, Number(settings?.statusRefreshRate ?? 2)));
+        setRefreshMs(nextRate * 1000);
+      } catch (error) {
+        console.error('Failed to load app settings:', error);
+      }
+    };
+
+    const handleSettingsUpdate = (updated: any) => {
+      setAppSettings(updated || {});
+      const nextRate = Math.max(1, Math.min(10, Number(updated?.statusRefreshRate ?? 2)));
+      setRefreshMs(nextRate * 1000);
+    };
+
+    loadSettings();
+    const unsubscribe = window.electronAPI?.server?.onAppSettingsUpdated?.(handleSettingsUpdate);
+
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
+  }, []);
 
   const checkJava = useCallback(async () => {
     if (!window.electronAPI) return;
@@ -115,12 +177,33 @@ export function useServerManager() {
         });
         return isSame ? prev : serverList;
       });
+      if (prevServersRef.current.length > 0 && appSettings?.notifications) {
+        serverList.forEach((nextServer) => {
+          const prevServer = prevServersRef.current.find((item) => item.id === nextServer.id);
+          if (!prevServer || prevServer.status === nextServer.status) return;
+
+          if (appSettings.notifications.statusChanges !== false) {
+            if (nextServer.status === 'RUNNING') {
+              notifyIfAllowed('Server started', `${nextServer.name} is now running.`);
+            } else if (nextServer.status === 'STOPPED') {
+              notifyIfAllowed('Server stopped', `${nextServer.name} has stopped.`);
+            }
+          }
+
+          if (appSettings.notifications.crashes && prevServer.status === 'RUNNING' && nextServer.status === 'STOPPED') {
+            if (!wasUserStop(nextServer.name)) {
+              notifyIfAllowed('Server crash detected', `${nextServer.name} stopped unexpectedly.`);
+            }
+          }
+        });
+      }
+      prevServersRef.current = serverList;
     } catch (error) {
       console.error('Failed to load servers:', error);
     } finally {
       setLoading(prev => (prev ? false : prev));
     }
-  }, []);
+  }, [appSettings?.notifications, notifyIfAllowed]);
 
   const createServer = useCallback(async (serverName: string = 'default', serverType: string = 'paper', version?: string | null, ramGB: number = 4, port?: number | null, manualJarPath?: string | null, displayName?: string | null) => {
     if (!window.electronAPI) return { success: false, error: 'Electron API not available' };
@@ -174,6 +257,7 @@ export function useServerManager() {
   const stopServer = useCallback(async (serverName: string) => {
     if (!window.electronAPI) return { success: false, error: 'Electron API not available' };
     try {
+      markUserStop(serverName);
       const result = await window.electronAPI.server.stopServer(serverName);
       if (result.success) {
         await loadServers();
@@ -187,6 +271,7 @@ export function useServerManager() {
   const restartServer = useCallback(async (serverName: string, ramGB: number = 4) => {
     if (!window.electronAPI) return { success: false, error: 'Electron API not available' };
     try {
+      markUserStop(serverName);
       const result = await window.electronAPI.server.restartServer(serverName, ramGB);
       if (result.success) {
         await loadServers();
@@ -200,6 +285,7 @@ export function useServerManager() {
   const killServer = useCallback(async (serverName: string) => {
     if (!window.electronAPI) return { success: false, error: 'Electron API not available' };
     try {
+      markUserStop(serverName);
       const result = await window.electronAPI.server.killServer(serverName);
       if (result.success) {
         await loadServers();
@@ -275,10 +361,10 @@ export function useServerManager() {
     // Poll server status periodically
     const interval = setInterval(() => {
       loadServers();
-    }, 2000);
+    }, refreshMs);
 
     return () => clearInterval(interval);
-  }, [checkJava, loadServers]);
+  }, [checkJava, loadServers, refreshMs]);
 
   return {
     servers,

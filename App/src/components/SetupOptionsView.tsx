@@ -1,5 +1,6 @@
 import { motion } from "framer-motion";
 import { useState, useEffect } from "react";
+import ToggleSwitch from "./ToggleSwitch";
 
 interface SetupOptionsViewProps {
   onComplete: () => void;
@@ -21,8 +22,8 @@ export default function SetupOptionsView({ onComplete }: SetupOptionsViewProps) 
   const [maxRAM, setMaxRAM] = useState(32); // Default, will be updated from system
   const [stepIndex, setStepIndex] = useState(0);
   const [quickStartEnabled, setQuickStartEnabled] = useState(true);
-  const [quickStartName, setQuickStartName] = useState("My First Server");
-  const [quickStartType, setQuickStartType] = useState<"paper" | "vanilla">("paper");
+  const [quickStartName, setQuickStartName] = useState("");
+  const [quickStartType, setQuickStartType] = useState<"paper" | "spigot" | "vanilla" | "fabric" | "forge" | "purpur" | "velocity" | "waterfall" | "bungeecord">("paper");
   const [quickStartVersion, setQuickStartVersion] = useState<string | null>(null);
   const [quickStartVersions, setQuickStartVersions] = useState<string[]>([]);
   const [quickStartLoading, setQuickStartLoading] = useState(false);
@@ -157,11 +158,8 @@ export default function SetupOptionsView({ onComplete }: SetupOptionsViewProps) 
 
       if (quickStartEnabled) {
         setCompletingStatus("Preparing starter server...");
-        const trimmedName = quickStartName.trim();
-        if (!trimmedName) {
-          setQuickStartError("Please enter a server name for quick start.");
-          return;
-        }
+        const fallbackName = "My First Server";
+        const trimmedName = quickStartName.trim() || fallbackName;
         if (defaultPort < 1024 || defaultPort > 65535) {
           setQuickStartError("Please set a valid default port (1024-65535).");
           return;
@@ -223,9 +221,38 @@ export default function SetupOptionsView({ onComplete }: SetupOptionsViewProps) 
     setQuickStartLoading(true);
     setQuickStartError(null);
     try {
-      const versions = quickStartType === "paper"
-        ? await window.electronAPI.server.getPaperVersions()
-        : await window.electronAPI.server.getVanillaVersions();
+      let versions: string[] = [];
+      switch (quickStartType) {
+        case "paper":
+          versions = await window.electronAPI.server.getPaperVersions();
+          break;
+        case "spigot":
+          versions = await window.electronAPI.server.getSpigotVersions();
+          break;
+        case "vanilla":
+          versions = await window.electronAPI.server.getVanillaVersions();
+          break;
+        case "fabric":
+          versions = await window.electronAPI.server.getFabricVersions();
+          break;
+        case "forge":
+          versions = await window.electronAPI.server.getForgeVersions();
+          break;
+        case "purpur":
+          versions = await window.electronAPI.server.getPurpurVersions();
+          break;
+        case "velocity":
+          versions = await window.electronAPI.server.getVelocityVersions();
+          break;
+        case "waterfall":
+          versions = await window.electronAPI.server.getWaterfallVersions();
+          break;
+        case "bungeecord":
+          versions = await window.electronAPI.server.getBungeeCordVersions();
+          break;
+        default:
+          versions = [];
+      }
       setQuickStartVersions(versions);
       setQuickStartVersion(versions[0] || null);
     } catch (error) {
@@ -392,11 +419,10 @@ export default function SetupOptionsView({ onComplete }: SetupOptionsViewProps) 
                   <span>Auto-backup enabled</span>
                   <p className="text-xs text-text-muted">Automatically backup servers</p>
                 </div>
-                <input
-                  type="checkbox"
+                <ToggleSwitch
                   checked={autoBackup}
-                  onChange={(e) => setAutoBackup(e.target.checked)}
-                  className="w-4 h-4 accent-accent cursor-pointer"
+                  onChange={(checked) => setAutoBackup(checked)}
+                  ariaLabel="Auto-backup enabled"
                 />
               </div>
               {autoBackup && (
@@ -463,11 +489,10 @@ export default function SetupOptionsView({ onComplete }: SetupOptionsViewProps) 
                   <span>Create a starter server now</span>
                   <p className="text-xs text-text-muted">Skip the empty dashboard and launch instantly</p>
                 </div>
-                <input
-                  type="checkbox"
+                <ToggleSwitch
                   checked={quickStartEnabled}
-                  onChange={(e) => setQuickStartEnabled(e.target.checked)}
-                  className="w-4 h-4 accent-accent cursor-pointer"
+                  onChange={(checked) => setQuickStartEnabled(checked)}
+                  ariaLabel="Create a starter server now"
                 />
               </div>
 
@@ -487,11 +512,18 @@ export default function SetupOptionsView({ onComplete }: SetupOptionsViewProps) 
                     <label className="block mb-2 text-text-primary">Server Type</label>
                     <select
                       value={quickStartType}
-                      onChange={(e) => setQuickStartType(e.target.value as "paper" | "vanilla")}
-                      className="w-full bg-background border border-border px-3 py-2 text-text-primary font-mono text-sm focus:outline-none focus:border-accent/50 rounded"
+                      onChange={(e) => setQuickStartType(e.target.value as "paper" | "spigot" | "vanilla" | "fabric" | "forge" | "purpur" | "velocity" | "waterfall" | "bungeecord")}
+                      className="select-custom w-full"
                     >
                       <option value="paper">Paper (recommended)</option>
+                      <option value="purpur">Purpur</option>
+                      <option value="spigot">Spigot</option>
                       <option value="vanilla">Vanilla</option>
+                      <option value="fabric">Fabric</option>
+                      <option value="forge">Forge</option>
+                      <option value="velocity">Velocity (proxy)</option>
+                      <option value="waterfall">Waterfall (proxy)</option>
+                      <option value="bungeecord">BungeeCord (proxy)</option>
                     </select>
                   </div>
                   <div>
@@ -500,7 +532,7 @@ export default function SetupOptionsView({ onComplete }: SetupOptionsViewProps) 
                       <select
                         value={quickStartVersion || ""}
                         onChange={(e) => setQuickStartVersion(e.target.value || null)}
-                        className="flex-1 bg-background border border-border px-3 py-2 text-text-primary font-mono text-sm focus:outline-none focus:border-accent/50 rounded"
+                        className="select-custom flex-1"
                         disabled={quickStartLoading || quickStartVersions.length === 0}
                       >
                         {quickStartVersions.length === 0 && (
@@ -552,11 +584,10 @@ export default function SetupOptionsView({ onComplete }: SetupOptionsViewProps) 
                       <span>Start server after setup</span>
                       <p className="text-xs text-text-muted">Launch immediately with the RAM set above</p>
                     </div>
-                    <input
-                      type="checkbox"
+                    <ToggleSwitch
                       checked={quickStartStartNow}
-                      onChange={(e) => setQuickStartStartNow(e.target.checked)}
-                      className="w-4 h-4 accent-accent cursor-pointer"
+                      onChange={(checked) => setQuickStartStartNow(checked)}
+                      ariaLabel="Start server after setup"
                     />
                   </div>
                   {quickStartError && (
@@ -582,11 +613,10 @@ export default function SetupOptionsView({ onComplete }: SetupOptionsViewProps) 
                   <span>Show boot sequence</span>
                   <p className="text-xs text-text-muted">Display boot animation on launch</p>
                 </div>
-                <input
-                  type="checkbox"
+                <ToggleSwitch
                   checked={showBootSequence}
-                  onChange={(e) => setShowBootSequence(e.target.checked)}
-                  className="w-4 h-4 accent-accent cursor-pointer"
+                  onChange={(checked) => setShowBootSequence(checked)}
+                  ariaLabel="Show boot sequence"
                 />
               </div>
               <div className="flex items-center justify-between">
@@ -594,11 +624,10 @@ export default function SetupOptionsView({ onComplete }: SetupOptionsViewProps) 
                   <span>Minimize to system tray</span>
                   <p className="text-xs text-text-muted">Keep app running in background</p>
                 </div>
-                <input
-                  type="checkbox"
+                <ToggleSwitch
                   checked={minimizeToTray}
-                  onChange={(e) => setMinimizeToTray(e.target.checked)}
-                  className="w-4 h-4 accent-accent cursor-pointer"
+                  onChange={(checked) => setMinimizeToTray(checked)}
+                  ariaLabel="Minimize to system tray"
                 />
               </div>
               <div className="flex items-center justify-between">
@@ -606,11 +635,10 @@ export default function SetupOptionsView({ onComplete }: SetupOptionsViewProps) 
                   <span>Start with Windows</span>
                   <p className="text-xs text-text-muted">Launch automatically on system startup</p>
                 </div>
-                <input
-                  type="checkbox"
+                <ToggleSwitch
                   checked={startWithWindows}
-                  onChange={(e) => setStartWithWindows(e.target.checked)}
-                  className="w-4 h-4 accent-accent cursor-pointer"
+                  onChange={(checked) => setStartWithWindows(checked)}
+                  ariaLabel="Start with Windows"
                 />
               </div>
             </div>
@@ -629,11 +657,10 @@ export default function SetupOptionsView({ onComplete }: SetupOptionsViewProps) 
                   <span>Server status changes</span>
                   <p className="text-xs text-text-muted">Notify when servers start or stop</p>
                 </div>
-                <input
-                  type="checkbox"
+                <ToggleSwitch
                   checked={notifications.statusChanges}
-                  onChange={(e) => updateNotification('statusChanges', e.target.checked)}
-                  className="w-4 h-4 accent-accent cursor-pointer"
+                  onChange={(checked) => updateNotification('statusChanges', checked)}
+                  ariaLabel="Server status changes notifications"
                 />
               </div>
               <div className="flex items-center justify-between">
@@ -641,11 +668,10 @@ export default function SetupOptionsView({ onComplete }: SetupOptionsViewProps) 
                   <span>Server crashes</span>
                   <p className="text-xs text-text-muted">Alert when servers crash unexpectedly</p>
                 </div>
-                <input
-                  type="checkbox"
+                <ToggleSwitch
                   checked={notifications.crashes}
-                  onChange={(e) => updateNotification('crashes', e.target.checked)}
-                  className="w-4 h-4 accent-accent cursor-pointer"
+                  onChange={(checked) => updateNotification('crashes', checked)}
+                  ariaLabel="Server crashes notifications"
                 />
               </div>
               <div className="flex items-center justify-between">
@@ -653,11 +679,10 @@ export default function SetupOptionsView({ onComplete }: SetupOptionsViewProps) 
                   <span>Update available</span>
                   <p className="text-xs text-text-muted">Notify when app updates are available</p>
                 </div>
-                <input
-                  type="checkbox"
+                <ToggleSwitch
                   checked={notifications.updates}
-                  onChange={(e) => updateNotification('updates', e.target.checked)}
-                  className="w-4 h-4 accent-accent cursor-pointer"
+                  onChange={(checked) => updateNotification('updates', checked)}
+                  ariaLabel="Update available notifications"
                 />
               </div>
             </div>

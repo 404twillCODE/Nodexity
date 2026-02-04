@@ -19,6 +19,7 @@ export default function SettingsView() {
 
   useEffect(() => {
     // Update green bar position when settings or maxRAM changes
+    if (activeTab !== 'server') return;
     if (ramSliderRef.current && settings) {
       const slider = ramSliderRef.current.querySelector('input[type="range"]') as HTMLInputElement;
       const fill = ramSliderRef.current.querySelector('.ram-fill') as HTMLElement;
@@ -28,21 +29,33 @@ export default function SettingsView() {
           const min = parseFloat(slider.min);
           const max = parseFloat(slider.max);
           const percentage = ((value - min) / (max - min)) * 100;
-          const sliderWidth = slider.offsetWidth;
+          const sliderWidth = slider.offsetWidth || ramSliderRef.current?.offsetWidth || 0;
           const thumbWidth = 18;
           const thumbPosition = (percentage / 100) * (sliderWidth - thumbWidth) + (thumbWidth / 2);
           fill.style.width = `${Math.max(0, thumbPosition - (thumbWidth / 2))}px`;
         };
-        updateFill();
+
+        const rafId = requestAnimationFrame(updateFill);
+        const timeoutId = window.setTimeout(updateFill, 50);
         slider.addEventListener('input', updateFill);
         window.addEventListener('resize', updateFill);
+
+        let resizeObserver: ResizeObserver | null = null;
+        if (typeof ResizeObserver !== 'undefined') {
+          resizeObserver = new ResizeObserver(() => updateFill());
+          resizeObserver.observe(ramSliderRef.current);
+        }
+
         return () => {
+          cancelAnimationFrame(rafId);
+          window.clearTimeout(timeoutId);
           slider.removeEventListener('input', updateFill);
           window.removeEventListener('resize', updateFill);
+          resizeObserver?.disconnect();
         };
       }
     }
-  }, [settings?.defaultRAM, maxRAM]);
+  }, [settings?.defaultRAM, maxRAM, activeTab]);
 
   useEffect(() => {
     // Ensure defaultRAM doesn't exceed maxRAM when maxRAM changes
@@ -92,8 +105,8 @@ export default function SettingsView() {
       // Get current settings if not loaded
       const currentSettings = settings || await window.electronAPI.server.getAppSettings();
       const updated = { ...currentSettings, [key]: value };
-      await window.electronAPI.server.saveAppSettings(updated);
-      setSettings(updated);
+      const saved = await window.electronAPI.server.saveAppSettings(updated);
+      setSettings(saved || updated);
     } catch (error) {
       console.error('Failed to save setting:', error);
     }
@@ -112,8 +125,8 @@ export default function SettingsView() {
         current = current[path[i]];
       }
       current[path[path.length - 1]] = value;
-      await window.electronAPI.server.saveAppSettings(updated);
-      setSettings(updated);
+      const saved = await window.electronAPI.server.saveAppSettings(updated);
+      setSettings(saved || updated);
     } catch (error) {
       console.error('Failed to save setting:', error);
     }
@@ -287,6 +300,42 @@ export default function SettingsView() {
                     onChange={(checked) => saveNestedSetting(['notifications', 'updates'], checked)}
                     ariaLabel="Update available notifications"
                   />
+                </div>
+              </div>
+            </motion.div>
+
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.3, type: "spring", stiffness: 100, damping: 15 }}
+              className="system-card p-6"
+            >
+              <h2 className="text-lg font-semibold text-text-primary font-mono mb-4">
+                Interface & Performance
+              </h2>
+              <div className="space-y-4 text-text-secondary font-mono text-sm">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <span>Reduce animations</span>
+                    <p className="text-xs text-text-muted">Minimize motion effects across the UI</p>
+                  </div>
+                  <ToggleSwitch
+                    checked={settings?.reduceAnimations || false}
+                    onChange={(checked) => saveSetting('reduceAnimations', checked)}
+                    ariaLabel="Reduce animations"
+                  />
+                </div>
+                <div>
+                  <label className="block mb-2 text-text-primary">Status refresh rate (seconds)</label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="10"
+                    value={settings?.statusRefreshRate || 2}
+                    onChange={(e) => saveSetting('statusRefreshRate', Math.max(1, Math.min(10, parseInt(e.target.value) || 2)))}
+                    className="w-full bg-background-secondary border border-border px-3 py-2 text-text-primary font-mono text-sm focus:outline-none focus:border-accent/50 rounded"
+                  />
+                  <p className="text-xs text-text-muted mt-1">Controls how often server status updates</p>
                 </div>
               </div>
             </motion.div>
@@ -540,7 +589,7 @@ export default function SettingsView() {
                       <select
                         value={settings?.logLevel || 'info'}
                         onChange={(e) => saveSetting('logLevel', e.target.value)}
-                        className="w-full bg-background-secondary border border-border px-3 py-2 text-text-primary font-mono text-sm focus:outline-none focus:border-accent/50 rounded"
+                        className="select-custom w-full"
                       >
                         <option value="error">Error</option>
                         <option value="warn">Warning</option>

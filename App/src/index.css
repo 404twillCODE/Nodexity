@@ -127,6 +127,54 @@
     transform: translateY(-2px);
   }
 
+  .select-custom {
+    @apply bg-background-secondary border border-border text-text-primary font-mono text-sm rounded;
+    appearance: none;
+    padding: 0.5rem 2.5rem 0.5rem 0.75rem;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='%2394A3B8' d='M1.41.59 6 5.17 10.59.59 12 2l-6 6-6-6z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.75rem center;
+    background-size: 0.75rem 0.5rem;
+  }
+
+  .select-custom:focus {
+    outline: none;
+    border-color: rgba(46, 242, 162, 0.5);
+  }
+
+  .titlebar-btn {
+    width: 26px;
+    height: 22px;
+    border-radius: 6px;
+    border: none;
+    background: transparent;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+  }
+
+  .titlebar-btn:hover {
+    background: transparent;
+  }
+
+  .titlebar-btn--minimize:hover .titlebar-icon {
+    color: rgba(234, 179, 8, 1);
+  }
+
+  .titlebar-btn--maximize:hover .titlebar-icon {
+    color: rgba(34, 197, 94, 1);
+  }
+
+  .titlebar-btn--close:hover .titlebar-icon {
+    color: rgba(239, 68, 68, 1);
+  }
+
+  .titlebar-icon {
+    color: rgba(148, 163, 184, 1);
+    transition: color 0.2s ease;
+  }
+
   .btn-primary {
     @apply relative overflow-hidden px-6 py-2.5 text-xs font-medium uppercase tracking-wider;
     background: rgba(46, 242, 162, 0.15);
@@ -192,15 +240,12 @@
     transition: all 0.1s cubic-bezier(0.4, 0, 0.2, 1);
   }
 
-  /* Pixel toggle switch (Uiverse.io by zl306) */
+  /* Minecraft-style toggle switch (restyled to match UI) */
   .switch {
     position: relative;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
+    display: inline-flex;
     align-items: center;
-    gap: 30px;
-    width: 60px;
+    width: 52px;
     height: 26px;
   }
 
@@ -247,6 +292,54 @@
 
   .toggle:checked + .slider:before {
     transform: translateX(32px);
+  }
+
+  /* Restyled toggle overrides for better UI fit */
+  .switch {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    width: 52px;
+    height: 26px;
+  }
+
+  .slider {
+    position: absolute;
+    inset: 0;
+    cursor: pointer;
+    border-radius: 6px;
+    border: 2px solid rgba(46, 242, 162, 0.2);
+    background: linear-gradient(180deg, rgba(12, 12, 12, 0.9), rgba(20, 20, 20, 0.95));
+    box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.5);
+    transition: all 0.2s ease;
+  }
+
+  .slider:before {
+    position: absolute;
+    content: "";
+    height: 18px;
+    width: 18px;
+    left: 3px;
+    bottom: 3px;
+    border-radius: 4px;
+    background: linear-gradient(180deg, rgba(70, 74, 80, 1), rgba(40, 42, 46, 1));
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.08),
+      0 2px 4px rgba(0, 0, 0, 0.4);
+    transition: all 0.2s ease;
+  }
+
+  .toggle:checked + .slider {
+    border-color: rgba(46, 242, 162, 0.7);
+    background: linear-gradient(180deg, rgba(12, 24, 20, 0.9), rgba(18, 32, 28, 0.95));
+    box-shadow:
+      inset 0 0 0 1px rgba(46, 242, 162, 0.25),
+      0 0 10px rgba(46, 242, 162, 0.15);
+  }
+
+  .toggle:checked + .slider:before {
+    transform: translateX(24px);
+    background: linear-gradient(180deg, rgba(46, 242, 162, 1), rgba(22, 168, 110, 1));
   }
 
   .-webkit-app-region-drag {

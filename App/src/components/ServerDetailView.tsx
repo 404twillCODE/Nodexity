@@ -1,5 +1,6 @@
 import { motion } from "framer-motion";
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import ToggleSwitch from "./ToggleSwitch";
 import { useServerManager } from "../hooks/useServerManager";
 import { useToast } from "./ToastProvider";
 import StatusBadge from "./StatusBadge";
@@ -107,6 +108,16 @@ export default function ServerDetailView({ serverName, onBack }: ServerDetailVie
       }
     };
     loadSettings();
+
+    const handleSettingsUpdate = (updated: any) => {
+      setSettings(updated || {});
+      setAutoScroll(updated?.consoleAutoScroll !== false);
+    };
+
+    const unsubscribe = window.electronAPI?.server?.onAppSettingsUpdated?.(handleSettingsUpdate);
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
   }, []);
 
   // Poll server usage when running
@@ -218,15 +229,15 @@ export default function ServerDetailView({ serverName, onBack }: ServerDetailVie
 
   // Throttled scroll update to prevent lag
   useEffect(() => {
-    if (autoScroll && scrollRef.current && !userScrolledRef.current) {
+    if (autoScroll && scrollRef.current) {
       // Clear any pending scroll
       if (scrollTimeoutRef.current) {
         clearTimeout(scrollTimeoutRef.current);
       }
-      
-      // Use requestAnimationFrame for smooth scrolling
+
+      userScrolledRef.current = false;
       scrollTimeoutRef.current = setTimeout(() => {
-        if (scrollRef.current && autoScroll && !userScrolledRef.current) {
+        if (scrollRef.current && autoScroll) {
           const container = scrollRef.current;
           container.scrollTop = container.scrollHeight;
           lastScrollTopRef.current = container.scrollTop;
@@ -673,7 +684,7 @@ export default function ServerDetailView({ serverName, onBack }: ServerDetailVie
                 <select
                   value={filterType}
                   onChange={(e) => setFilterType(e.target.value as any)}
-                  className="bg-background border border-border px-3 py-2 text-text-primary font-mono text-xs focus:outline-none focus:border-accent/50 rounded transition-colors"
+                  className="select-custom"
                 >
                   <option value="all">All</option>
                   <option value="stdout">Output</option>
@@ -683,25 +694,24 @@ export default function ServerDetailView({ serverName, onBack }: ServerDetailVie
               </div>
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-4">
-                  <label className="flex items-center gap-2 text-text-secondary font-mono text-xs cursor-pointer">
-                    <input
-                      type="checkbox"
+                  <div className="flex items-center gap-2 text-text-secondary font-mono text-xs">
+                    <span>Auto-scroll</span>
+                    <ToggleSwitch
                       checked={autoScroll}
-                      onChange={(e) => {
-                        setAutoScroll(e.target.checked);
+                      onChange={(checked) => {
+                        setAutoScroll(checked);
                         if (window.electronAPI && settings) {
                           window.electronAPI.server.saveAppSettings({
                             ...settings,
-                            consoleAutoScroll: e.target.checked
-                          }).then(() => {
-                            setSettings({ ...settings, consoleAutoScroll: e.target.checked });
+                            consoleAutoScroll: checked
+                          }).then((saved) => {
+                            setSettings(saved || { ...settings, consoleAutoScroll: checked });
                           });
                         }
                       }}
-                      className="w-4 h-4 accent-accent cursor-pointer rounded"
+                      ariaLabel="Auto-scroll console"
                     />
-                    Auto-scroll
-                  </label>
+                  </div>
                   <span className="text-text-muted font-mono text-xs">
                     {filteredLines.length} / {lines.length} lines
                     {searchQuery && ` (filtered)`}
@@ -743,7 +753,7 @@ export default function ServerDetailView({ serverName, onBack }: ServerDetailVie
                     return (
                       <div
                         key={line.id}
-                        className={`group flex gap-3 py-1 px-2 rounded transition-colors ${
+                        className={`group py-1 px-2 rounded transition-colors ${
                           line.type === 'stderr' 
                             ? 'text-red-400 bg-red-400/10 hover:bg-red-400/15' 
                             : line.type === 'command' 
@@ -753,13 +763,13 @@ export default function ServerDetailView({ serverName, onBack }: ServerDetailVie
                       >
                           {hasSearch ? (
                             <span 
-                              className={`flex-1 ${
+                              className={`${
                                 settings?.consoleWordWrap 
                                   ? 'whitespace-pre-wrap break-words' 
                                   : 'whitespace-pre'
                               }`}
                               dangerouslySetInnerHTML={{
-                                __html: lineText
+                                __html: `${settings?.showTimestamps !== false ? `[${line.timestamp}] ` : ''}${lineText}`
                                   .replace(/&/g, '&amp;')
                                   .replace(/</g, '&lt;')
                                   .replace(/>/g, '&gt;')
@@ -771,13 +781,13 @@ export default function ServerDetailView({ serverName, onBack }: ServerDetailVie
                             />
                           ) : (
                             <span 
-                              className={`flex-1 ${
+                              className={`${
                                 settings?.consoleWordWrap 
                                   ? 'whitespace-pre-wrap break-words' 
                                   : 'whitespace-pre'
                               }`}
                             >
-                              {lineText}
+                              {settings?.showTimestamps !== false ? `[${line.timestamp}] ` : ''}{lineText}
                             </span>
                           )}
                         </div>

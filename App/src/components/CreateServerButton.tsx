@@ -1,5 +1,6 @@
 import { motion } from "framer-motion";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
+import ToggleSwitch from "./ToggleSwitch";
 import { useServerManager } from "../hooks/useServerManager";
 
 type ServerType = 'paper' | 'spigot' | 'vanilla' | 'fabric' | 'forge' | 'purpur' | 'velocity' | 'waterfall' | 'bungeecord' | 'manual';
@@ -19,6 +20,7 @@ export default function CreateServerButton() {
   const [serverPort, setServerPort] = useState(25565);
   const [createStep, setCreateStep] = useState(0);
   const [portMessage, setPortMessage] = useState<string | null>(null);
+  const [portAutoApplied, setPortAutoApplied] = useState(false);
   const [creatingStatus, setCreatingStatus] = useState("Creating server files...");
   const [autoStart, setAutoStart] = useState(true);
   const [settings, setSettings] = useState<any>(null);
@@ -58,26 +60,35 @@ export default function CreateServerButton() {
     }
   }, [showInput]);
 
+  const checkPortAvailability = useCallback(async (portToCheck: number) => {
+    if (!window.electronAPI?.server?.findAvailablePort) return;
+    if (portToCheck < 1024 || portToCheck > 65535) return;
+
+    try {
+      const suggestedPort = await window.electronAPI.server.findAvailablePort(portToCheck);
+      if (suggestedPort && suggestedPort !== portToCheck) {
+        setServerPort(suggestedPort);
+        setPortMessage(`Port ${portToCheck} is in use. Switched to ${suggestedPort}.`);
+        setPortAutoApplied(true);
+        return;
+      }
+      if (!portAutoApplied) {
+        setPortMessage(null);
+      }
+    } catch (error) {
+      console.error('Failed to check port availability:', error);
+    }
+  }, [portAutoApplied]);
+
   useEffect(() => {
-    if (!showInput || !window.electronAPI?.server?.findAvailablePort) return;
-    if (serverPort < 1024 || serverPort > 65535) return;
+    if (!showInput) return;
 
     if (portCheckTimeoutRef.current) {
       window.clearTimeout(portCheckTimeoutRef.current);
     }
 
-    portCheckTimeoutRef.current = window.setTimeout(async () => {
-      try {
-        const suggestedPort = await window.electronAPI!.server.findAvailablePort(serverPort);
-        if (suggestedPort && suggestedPort !== serverPort) {
-          setServerPort(suggestedPort);
-          setPortMessage(`Port ${serverPort} is in use. Switched to ${suggestedPort}.`);
-        } else {
-          setPortMessage(null);
-        }
-      } catch (error) {
-        console.error('Failed to check port availability:', error);
-      }
+    portCheckTimeoutRef.current = window.setTimeout(() => {
+      checkPortAvailability(serverPort);
     }, 250);
 
     return () => {
@@ -86,7 +97,12 @@ export default function CreateServerButton() {
         portCheckTimeoutRef.current = null;
       }
     };
-  }, [serverPort, showInput]);
+  }, [serverPort, showInput, checkPortAvailability]);
+
+  useEffect(() => {
+    if (!showInput || createStep !== 2) return;
+    checkPortAvailability(serverPort);
+  }, [showInput, createStep, serverPort, checkPortAvailability]);
 
   useEffect(() => {
     // Update green bar position for RAM slider
@@ -282,6 +298,7 @@ export default function CreateServerButton() {
         setErrorMessage(null);
         setWarningMessage(null);
         setPortMessage(null);
+        setPortAutoApplied(false);
         setAutoStart(true);
       } else {
         // Show error in UI instead of alert
@@ -315,6 +332,7 @@ export default function CreateServerButton() {
     setServerPort(settings?.defaultPort || 25565);
     setCreateStep(0);
     setPortMessage(null);
+    setPortAutoApplied(false);
     setAutoStart(true);
   };
 
@@ -361,54 +379,20 @@ export default function CreateServerButton() {
         <div className="space-y-6 relative z-10">
           {/* Warning/Error Messages */}
           {(warningMessage || errorMessage) && (
-            <div className={`p-3 rounded-lg border-2 ${
+            <div className={`p-4 rounded-lg border ${
               errorMessage 
-                ? 'border-red-500/50 bg-red-500/10 text-red-400' 
-                : 'border-yellow-500/50 bg-yellow-500/10 text-yellow-400'
+                ? 'border-red-500/40 bg-red-500/10 text-red-200' 
+                : 'border-yellow-500/40 bg-yellow-500/10 text-yellow-200'
             }`}>
-              <div className="flex items-start gap-2">
-                <span className="text-lg">{errorMessage ? '⚠️' : 'ℹ️'}</span>
+              <div className="flex items-start gap-3">
+                <span className="text-base mt-0.5">{errorMessage ? '⚠' : 'i'}</span>
                 <div className="flex-1">
-                  <div className="font-mono text-sm font-semibold mb-1">
+                  <div className="font-mono text-xs uppercase tracking-wider text-text-muted mb-1">
                     {errorMessage ? 'Error' : 'Note'}
                   </div>
-                  <div className="font-mono text-xs">
+                  <div className="font-mono text-sm text-text-primary">
                     {errorMessage || warningMessage}
                   </div>
-                  {warningMessage && !errorMessage && (
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      {serverType === 'spigot' && (
-                        <a 
-                          href="https://www.spigotmc.org/wiki/buildtools/" 
-                          target="_blank" 
-                          rel="noopener noreferrer"
-                          className="text-xs underline hover:text-yellow-300"
-                        >
-                          Download BuildTools →
-                        </a>
-                      )}
-                      {serverType === 'forge' && (
-                        <a 
-                          href="https://files.minecraftforge.net/" 
-                          target="_blank" 
-                          rel="noopener noreferrer"
-                          className="text-xs underline hover:text-yellow-300"
-                        >
-                          Download Forge Installer →
-                        </a>
-                      )}
-                      {serverType === 'bungeecord' && (
-                        <a 
-                          href="https://www.spigotmc.org/wiki/bungeecord/" 
-                          target="_blank" 
-                          rel="noopener noreferrer"
-                          className="text-xs underline hover:text-yellow-300"
-                        >
-                          Download BungeeCord →
-                        </a>
-                      )}
-                    </div>
-                  )}
                 </div>
                 {errorMessage && (
                   <button
@@ -416,21 +400,65 @@ export default function CreateServerButton() {
                       setErrorMessage(null);
                       setWarningMessage(null);
                     }}
-                    className="text-red-400 hover:text-red-300"
+                    className="text-red-300 hover:text-red-200"
                   >
                     ✕
                   </button>
                 )}
               </div>
+              {warningMessage && !errorMessage && (
+                <div className="mt-3 flex items-center justify-between gap-3">
+                  <div className="text-xs text-text-muted font-mono">
+                    {serverType === 'spigot' && 'BuildTools required for newer versions.'}
+                    {serverType === 'forge' && 'Forge installer may be required.'}
+                    {serverType === 'bungeecord' && 'Manual download may be required.'}
+                  </div>
+                  {serverType === 'spigot' && (
+                    <a 
+                      href="https://www.spigotmc.org/wiki/buildtools/" 
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                      className="btn-secondary text-xs px-3 py-1.5"
+                    >
+                      BuildTools
+                    </a>
+                  )}
+                  {serverType === 'forge' && (
+                    <a 
+                      href="https://files.minecraftforge.net/" 
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                      className="btn-secondary text-xs px-3 py-1.5"
+                    >
+                      Forge Installer
+                    </a>
+                  )}
+                  {serverType === 'bungeecord' && (
+                    <a 
+                      href="https://www.spigotmc.org/wiki/bungeecord/" 
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                      className="btn-secondary text-xs px-3 py-1.5"
+                    >
+                      BungeeCord
+                    </a>
+                  )}
+                </div>
+              )}
             </div>
           )}
 
-          {portMessage && !errorMessage && (
-            <div className="p-3 rounded-lg border-2 border-blue-500/40 bg-blue-500/10 text-blue-300">
-              <div className="flex items-start gap-2">
-                <span className="text-lg">ℹ️</span>
-                <div className="flex-1 font-mono text-xs">
-                  {portMessage}
+          {createStep === 2 && portMessage && !errorMessage && (
+            <div className="p-3 rounded-lg border border-accent/30 bg-accent/10 text-text-secondary">
+              <div className="flex items-start gap-3">
+                <span className="text-accent text-base">ⓘ</span>
+                <div className="flex-1">
+                  <div className="text-xs font-mono uppercase tracking-wider text-text-muted mb-1">
+                    Port Update
+                  </div>
+                  <div className="font-mono text-sm text-text-primary">
+                    {portMessage}
+                  </div>
                 </div>
               </div>
             </div>
@@ -477,7 +505,7 @@ export default function CreateServerButton() {
                               <div className="mt-1 text-[10px] text-yellow-400/80 font-mono">
                                 {type.id === 'spigot' && '⚠️ May require BuildTools'}
                                 {type.id === 'forge' && '⚠️ May require manual setup'}
-                                {type.id === 'bungeecord' && '⚠️ Limited downloads'}
+                                {type.id === 'bungeecord' && '⚠️ May require manual download'}
                               </div>
                             )}
                           </div>
@@ -639,8 +667,8 @@ export default function CreateServerButton() {
                   Failed to load versions. Please try again.
                 </div>
               ) : (
-                <div className="max-h-[200px] overflow-y-auto custom-scrollbar border border-border rounded-lg p-3 bg-background-secondary">
-                  <div className="grid grid-cols-3 gap-2">
+                <div className="max-h-[320px] overflow-y-auto custom-scrollbar border border-border rounded-lg p-3 bg-background-secondary">
+                  <div className="grid grid-cols-4 gap-2">
                     {versions.map((version) => {
                       const isLatest = version === versions[0]; // First version is latest (newest first)
                       const isSelected = selectedVersion === version;
@@ -720,7 +748,7 @@ export default function CreateServerButton() {
                     // Allow spaces in display name, but folder will use dashes
                     setServerName(e.target.value);
                   }}
-                  placeholder="my server"
+                  placeholder="My Server"
                   className="w-full bg-background-secondary border border-border px-4 py-3 text-text-primary font-mono text-sm focus:outline-none focus:border-accent/50 rounded relative z-10"
                   disabled={isCreating}
                   onKeyDown={(e) => {
@@ -772,24 +800,27 @@ export default function CreateServerButton() {
                   min="1024"
                   max="65535"
                   value={serverPort}
-                  onChange={(e) => setServerPort(parseInt(e.target.value) || 0)}
+                  onChange={(e) => {
+                    setPortAutoApplied(false);
+                    setPortMessage(null);
+                    setServerPort(parseInt(e.target.value) || 0);
+                  }}
                   disabled={isCreating}
                   className="w-full bg-background-secondary border border-border px-4 py-3 text-text-primary font-mono text-sm focus:outline-none focus:border-accent/50 rounded"
                 />
                 <p className="text-xs text-text-muted mt-1">Recommended: 25565 (1024-65535)</p>
               </div>
 
-            <div className="flex items-center justify-between text-text-secondary font-mono text-sm">
-              <div>
-                <span>Auto-start server</span>
+            <div className="flex items-start justify-between text-text-secondary font-mono text-sm">
+              <div className="text-left">
+                <span>Auto start server</span>
                 <p className="text-xs text-text-muted">Launch immediately after creation</p>
               </div>
-              <input
-                type="checkbox"
+              <ToggleSwitch
                 checked={autoStart}
-                onChange={(e) => setAutoStart(e.target.checked)}
+                onChange={(checked) => setAutoStart(checked)}
+                ariaLabel="Auto-start server"
                 disabled={isCreating}
-                className="w-4 h-4 accent-accent cursor-pointer"
               />
             </div>
             </>
@@ -857,6 +888,8 @@ export default function CreateServerButton() {
         setCreateStep(0);
         setErrorMessage(null);
         setWarningMessage(null);
+        setPortMessage(null);
+        setPortAutoApplied(false);
       }}
       className="btn-primary"
       whileHover={{ scale: 1.02 }}

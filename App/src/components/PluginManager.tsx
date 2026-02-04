@@ -1,6 +1,7 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { motion } from "framer-motion";
 import { useToast } from "./ToastProvider";
+import FileEditor from "./FileEditor";
 
 interface PluginManagerProps {
   serverName: string;
@@ -32,7 +33,12 @@ export default function PluginManager({ serverName }: PluginManagerProps) {
   const [supportsPlugins, setSupportsPlugins] = useState<boolean | null>(null);
   const [minecraftVersion, setMinecraftVersion] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [modrinthLimit, setModrinthLimit] = useState(200);
+  const [configPath, setConfigPath] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const { notify } = useToast();
+  const modrinthListRef = useRef<HTMLDivElement | null>(null);
+  const restoreScrollRef = useRef<number | null>(null);
 
   useEffect(() => {
     checkPluginSupport();
@@ -43,7 +49,7 @@ export default function PluginManager({ serverName }: PluginManagerProps) {
       loadPlugins();
       loadModrinthPlugins();
     }
-  }, [serverName, supportsPlugins]);
+  }, [serverName, supportsPlugins, modrinthLimit]);
 
   const checkPluginSupport = async () => {
     if (!window.electronAPI || !window.electronAPI.server) return;
@@ -119,8 +125,7 @@ export default function PluginManager({ serverName }: PluginManagerProps) {
     
     setLoadingModrinth(true);
     try {
-      // Fetch all plugins (no limit, will paginate automatically to get full selection)
-      const plugins = await window.electronAPI.server.getModrinthPlugins(minecraftVersion);
+      const plugins = await window.electronAPI.server.getModrinthPlugins(minecraftVersion, modrinthLimit);
       setModrinthPlugins(plugins || []);
     } catch (error) {
       console.error('Failed to load Modrinth plugins:', error);
@@ -128,10 +133,48 @@ export default function PluginManager({ serverName }: PluginManagerProps) {
       setLoadingModrinth(false);
     }
   };
+  const normalizeName = (value: string) =>
+    value
+      .toLowerCase()
+      .replace(/\.jar$/i, '')
+      .replace(/[^a-z0-9]/g, '');
 
-  const handleDelete = async (pluginName: string) => {
-    if (!confirm(`Are you sure you want to delete ${pluginName}?`)) return;
-    
+  const installedPluginKeys = useMemo(() => {
+    return new Set(plugins.map((plugin) => normalizeName(plugin.name)));
+  }, [plugins]);
+
+  const filteredModrinthPlugins = useMemo(() => {
+    const matchesSearch = (plugin: ModrinthPlugin) => {
+      if (!searchQuery.trim()) return true;
+      const query = searchQuery.toLowerCase();
+      return (
+        plugin.title.toLowerCase().includes(query) ||
+        plugin.description.toLowerCase().includes(query) ||
+        plugin.slug.toLowerCase().includes(query)
+      );
+    };
+
+    return modrinthPlugins.filter((plugin) => {
+      const normalizedTitle = normalizeName(plugin.title);
+      const normalizedSlug = normalizeName(plugin.slug);
+      const alreadyInstalled =
+        installedPluginKeys.has(normalizedTitle) ||
+        installedPluginKeys.has(normalizedSlug);
+      if (alreadyInstalled) return false;
+      return matchesSearch(plugin);
+    });
+  }, [modrinthPlugins, searchQuery, installedPluginKeys]);
+
+  useEffect(() => {
+    if (restoreScrollRef.current === null) return;
+    if (modrinthListRef.current) {
+      modrinthListRef.current.scrollTop = restoreScrollRef.current;
+    }
+    restoreScrollRef.current = null;
+  }, [filteredModrinthPlugins.length]);
+
+
+  const handleDeleteConfirmed = async (pluginName: string) => {
     if (!window.electronAPI) return;
     setDeleting(pluginName);
     try {
@@ -154,6 +197,22 @@ export default function PluginManager({ serverName }: PluginManagerProps) {
     } finally {
       setDeleting(null);
     }
+  };
+
+  const openPluginConfig = async (pluginName: string) => {
+    if (!window.electronAPI) return;
+    const baseName = pluginName.replace(/\.jar$/i, '');
+    const preferredPath = `plugins/${baseName}`;
+    try {
+      const result = await window.electronAPI.server.getServerFiles(serverName, preferredPath);
+      if (result.success) {
+        setConfigPath(preferredPath);
+        return;
+      }
+    } catch (error) {
+      // Ignore and fallback
+    }
+    setConfigPath('plugins');
   };
 
   const handleInstall = async (projectId: string, pluginTitle: string) => {
@@ -285,15 +344,25 @@ export default function PluginManager({ serverName }: PluginManagerProps) {
                         <span>Modified: {formatDate(plugin.modified)}</span>
                       </div>
                     </div>
-                    <motion.button
-                      onClick={() => handleDelete(plugin.name)}
-                      disabled={deleting === plugin.name}
-                      className="btn-secondary text-xs px-4 py-2 disabled:opacity-50"
-                      whileHover={{ scale: deleting === plugin.name ? 1 : 1.02 }}
-                      whileTap={{ scale: deleting === plugin.name ? 1 : 0.98 }}
-                    >
-                      {deleting === plugin.name ? 'DELETING...' : 'DELETE'}
-                    </motion.button>
+                    <div className="flex items-center gap-2">
+                      <motion.button
+                        onClick={() => openPluginConfig(plugin.name)}
+                        className="btn-secondary text-xs px-3 py-2"
+                        whileHover={{ scale: 1.02 }}
+                        whileTap={{ scale: 0.98 }}
+                      >
+                        CONFIG
+                      </motion.button>
+                      <motion.button
+                        onClick={() => setDeleteTarget(plugin.name)}
+                        disabled={deleting === plugin.name}
+                        className="btn-secondary text-xs px-4 py-2 disabled:opacity-50"
+                        whileHover={{ scale: deleting === plugin.name ? 1 : 1.02 }}
+                        whileTap={{ scale: deleting === plugin.name ? 1 : 0.98 }}
+                      >
+                        {deleting === plugin.name ? 'DELETING...' : 'DELETE'}
+                      </motion.button>
+                    </div>
                   </div>
                 </motion.div>
               ))}
@@ -307,22 +376,6 @@ export default function PluginManager({ serverName }: PluginManagerProps) {
             <h3 className="text-lg font-semibold text-text-primary font-mono">
               Available on Modrinth
             </h3>
-            {modrinthPlugins.length > 0 && (
-              <span className="text-sm text-text-muted font-mono">
-                {searchQuery.trim() 
-                  ? `${modrinthPlugins.filter((plugin) => {
-                      const query = searchQuery.toLowerCase();
-                      return (
-                        plugin.title.toLowerCase().includes(query) ||
-                        plugin.description.toLowerCase().includes(query) ||
-                        plugin.slug.toLowerCase().includes(query)
-                      );
-                    }).length} of ${modrinthPlugins.length} plugins`
-                  : `${modrinthPlugins.length} ${modrinthPlugins.length === 1 ? 'plugin' : 'plugins'} available`
-                }
-                {minecraftVersion && ` for ${minecraftVersion}`}
-              </span>
-            )}
           </div>
           
           {/* Search Bar */}
@@ -353,18 +406,8 @@ export default function PluginManager({ serverName }: PluginManagerProps) {
               </p>
             </div>
           ) : (
-            <div className="space-y-3 max-h-[600px] overflow-y-auto custom-scrollbar">
-              {modrinthPlugins
-                .filter((plugin) => {
-                  if (!searchQuery.trim()) return true;
-                  const query = searchQuery.toLowerCase();
-                  return (
-                    plugin.title.toLowerCase().includes(query) ||
-                    plugin.description.toLowerCase().includes(query) ||
-                    plugin.slug.toLowerCase().includes(query)
-                  );
-                })
-                .map((plugin) => (
+            <div ref={modrinthListRef} className="space-y-3 max-h-[calc(100vh-420px)] overflow-y-auto custom-scrollbar">
+              {filteredModrinthPlugins.map((plugin) => (
                 <motion.div
                   key={plugin.project_id}
                   initial={{ opacity: 0, y: 10 }}
@@ -413,15 +456,7 @@ export default function PluginManager({ serverName }: PluginManagerProps) {
                   </div>
                 </motion.div>
               ))}
-              {modrinthPlugins.filter((plugin) => {
-                if (!searchQuery.trim()) return false;
-                const query = searchQuery.toLowerCase();
-                return (
-                  plugin.title.toLowerCase().includes(query) ||
-                  plugin.description.toLowerCase().includes(query) ||
-                  plugin.slug.toLowerCase().includes(query)
-                );
-              }).length === 0 && searchQuery.trim() && (
+              {filteredModrinthPlugins.length === 0 && searchQuery.trim() && (
                 <div className="system-card p-8 text-center">
                   <div className="text-3xl mb-3 opacity-20">🔍</div>
                   <h4 className="text-md font-semibold text-text-primary font-mono mb-2">
@@ -432,10 +467,85 @@ export default function PluginManager({ serverName }: PluginManagerProps) {
                   </p>
                 </div>
               )}
+              {!searchQuery.trim() && modrinthPlugins.length >= modrinthLimit && (
+                <div className="flex justify-center">
+                  <motion.button
+                    onClick={() => {
+                      if (modrinthListRef.current) {
+                        restoreScrollRef.current = modrinthListRef.current.scrollTop;
+                      }
+                      setModrinthLimit((prev) => prev + 200);
+                    }}
+                    className="btn-secondary text-xs px-4 py-2"
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                  >
+                    LOAD MORE
+                  </motion.button>
+                </div>
+              )}
             </div>
           )}
         </div>
       </div>
+
+      {configPath && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm p-6">
+          <div className="system-card w-full max-w-5xl h-[80vh] overflow-hidden relative">
+            <div className="flex items-center justify-between border-b border-border bg-background-secondary px-4 py-3">
+              <div className="text-sm font-mono text-text-secondary">
+                Plugin Config: {configPath}
+              </div>
+              <motion.button
+                onClick={() => setConfigPath(null)}
+                className="btn-secondary text-xs px-3 py-1"
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+              >
+                CLOSE
+              </motion.button>
+            </div>
+            <FileEditor serverName={serverName} initialPath={configPath} />
+          </div>
+        </div>
+      )}
+
+      {deleteTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm p-6">
+          <div className="system-card w-full max-w-md p-6">
+            <div className="text-lg font-semibold text-text-primary font-mono mb-2">
+              Delete plugin?
+            </div>
+            <p className="text-text-secondary font-mono text-sm mb-6">
+              Are you sure you want to delete {deleteTarget}?
+            </p>
+            <div className="flex justify-end gap-3">
+              <motion.button
+                onClick={() => setDeleteTarget(null)}
+                className="btn-secondary text-xs px-4 py-2"
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+              >
+                CANCEL
+              </motion.button>
+              <motion.button
+                onClick={async () => {
+                  const target = deleteTarget;
+                  setDeleteTarget(null);
+                  if (target) {
+                    await handleDeleteConfirmed(target);
+                  }
+                }}
+                className="btn-primary text-xs px-4 py-2"
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+              >
+                DELETE
+              </motion.button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

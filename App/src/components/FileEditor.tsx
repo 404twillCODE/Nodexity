@@ -4,6 +4,7 @@ import { useToast } from "./ToastProvider";
 
 interface FileEditorProps {
   serverName: string;
+  initialPath?: string;
 }
 
 interface FileItem {
@@ -14,7 +15,7 @@ interface FileItem {
   path: string;
 }
 
-export default function FileEditor({ serverName }: FileEditorProps) {
+export default function FileEditor({ serverName, initialPath }: FileEditorProps) {
   const [currentPath, setCurrentPath] = useState('');
   const [files, setFiles] = useState<FileItem[]>([]);
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
@@ -23,6 +24,12 @@ export default function FileEditor({ serverName }: FileEditorProps) {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const { notify } = useToast();
+
+  useEffect(() => {
+    if (initialPath !== undefined) {
+      setCurrentPath(initialPath);
+    }
+  }, [initialPath]);
 
   useEffect(() => {
     loadFiles();

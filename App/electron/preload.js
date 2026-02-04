@@ -59,5 +59,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
     removeServerLogListener: () => {
       ipcRenderer.removeAllListeners('server-log');
     },
+    onAppSettingsUpdated: (callback) => {
+      const handler = (event, data) => callback(data);
+      ipcRenderer.on('app-settings-updated', handler);
+      return () => ipcRenderer.removeListener('app-settings-updated', handler);
+    },
+    onUpdateAvailable: (callback) => {
+      const handler = (event, data) => callback(data);
+      ipcRenderer.on('update-available', handler);
+      return () => ipcRenderer.removeListener('update-available', handler);
+    }
   },
 });

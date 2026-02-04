@@ -14,25 +14,25 @@ export default function TitleBar() {
   };
 
   return (
-    <div className="h-8 bg-background-secondary border-b border-border flex items-center justify-between px-4 -webkit-app-region-drag">
+    <div className="h-10 bg-background-secondary border-b border-border flex items-center justify-between px-4 -webkit-app-region-drag">
       <div className="flex items-center gap-2 -webkit-app-region-drag">
-        <div className="h-1.5 w-1.5 bg-accent rounded-full"></div>
-        <span className="text-xs font-mono text-text-secondary">HEXNODE</span>
+        <div className="h-2 w-2 bg-accent rounded-sm"></div>
+        <span className="text-xs font-mono text-text-secondary tracking-[0.2em]">HEXNODE</span>
       </div>
       <div className="flex items-center gap-2 -webkit-app-region-no-drag">
         {/* Minimize Button */}
         <motion.button
           onClick={handleMinimize}
-          className="h-4 w-4 rounded-full bg-text-muted/20 flex items-center justify-center transition-colors hover:bg-yellow-500/30 group"
-          whileHover={{ scale: 1.1 }}
+          className="titlebar-btn titlebar-btn--minimize"
+          whileHover={{ scale: 1.05 }}
           whileTap={{ scale: 0.95 }}
         >
           <svg
-            width="8"
-            height="8"
+            width="12"
+            height="12"
             viewBox="0 0 12 12"
             fill="none"
-            className="text-text-secondary group-hover:text-yellow-400 transition-colors"
+            className="titlebar-icon"
           >
             <line x1="2" y1="6" x2="10" y2="6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
           </svg>
@@ -41,16 +41,16 @@ export default function TitleBar() {
         {/* Maximize Button */}
         <motion.button
           onClick={handleMaximize}
-          className="h-4 w-4 rounded-full bg-text-muted/20 flex items-center justify-center transition-colors hover:bg-green-500/30 group"
-          whileHover={{ scale: 1.1 }}
+          className="titlebar-btn titlebar-btn--maximize"
+          whileHover={{ scale: 1.05 }}
           whileTap={{ scale: 0.95 }}
         >
           <svg
-            width="8"
-            height="8"
+            width="12"
+            height="12"
             viewBox="0 0 12 12"
             fill="none"
-            className="text-text-secondary group-hover:text-green-400 transition-colors"
+            className="titlebar-icon"
           >
             <rect x="1" y="1" width="10" height="10" stroke="currentColor" strokeWidth="1.5" fill="none" />
           </svg>
@@ -59,21 +59,21 @@ export default function TitleBar() {
         {/* Close Button */}
         <motion.button
           onClick={handleClose}
-          className="h-4 w-4 rounded-full bg-text-muted/20 flex items-center justify-center transition-colors hover:bg-red-500/30 group"
-          whileHover={{ scale: 1.1 }}
+          className="titlebar-btn titlebar-btn--close"
+          whileHover={{ scale: 1.05 }}
           whileTap={{ scale: 0.95 }}
         >
           <svg
-            width="8"
-            height="8"
+            width="14"
+            height="14"
             viewBox="0 0 12 12"
             fill="none"
-            className="text-text-secondary group-hover:text-red-400 transition-colors"
+            className="titlebar-icon"
           >
             <path
               d="M3 3L9 9M9 3L3 9"
               stroke="currentColor"
-              strokeWidth="1.5"
+              strokeWidth="2"
               strokeLinecap="round"
             />
           </svg>

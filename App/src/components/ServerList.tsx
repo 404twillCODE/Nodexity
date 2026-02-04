@@ -16,6 +16,7 @@ const AggregateStatsPanel = memo(function AggregateStatsPanel({
   getServersDiskUsage,
   getSystemContext,
   isScrollingRef,
+  refreshMs,
   onReady,
 }: {
   hasServers: boolean;
@@ -27,6 +28,7 @@ const AggregateStatsPanel = memo(function AggregateStatsPanel({
     serversDirectory?: string;
   }>;
   isScrollingRef: React.MutableRefObject<boolean>;
+  refreshMs: number;
   onReady?: () => void;
 }) {
   const [aggregateStats, setAggregateStats] = useState<{
@@ -126,7 +128,8 @@ const AggregateStatsPanel = memo(function AggregateStatsPanel({
     if (usageIntervalRef.current) clearInterval(usageIntervalRef.current);
     if (diskIntervalRef.current) clearInterval(diskIntervalRef.current);
 
-    usageIntervalRef.current = setInterval(loadUsageStats, 500); // fast CPU/RAM
+    const usageInterval = Math.max(500, Math.floor(refreshMs / 2));
+    usageIntervalRef.current = setInterval(loadUsageStats, usageInterval); // fast CPU/RAM
     diskIntervalRef.current = setInterval(loadDiskStats, 15000); // slow disk scan
 
     return () => {
@@ -225,6 +228,7 @@ export default function ServerList({ onServerClick }: ServerListProps) {
   const isScrollingRef = useRef(false);
   const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [statsReady, setStatsReady] = useState(false);
+  const [refreshMs, setRefreshMs] = useState(2000);
 
   const handleStart = async (serverName: string) => {
     const server = servers.find(s => s.name === serverName);
@@ -253,6 +257,31 @@ export default function ServerList({ onServerClick }: ServerListProps) {
   useEffect(() => {
     setStatsReady(false);
   }, [servers.length]);
+
+  useEffect(() => {
+    const loadSettings = async () => {
+      if (!window.electronAPI) return;
+      try {
+        const settings = await window.electronAPI.server.getAppSettings();
+        const nextRate = Math.max(1, Math.min(10, Number(settings?.statusRefreshRate ?? 2)));
+        setRefreshMs(nextRate * 1000);
+      } catch (error) {
+        console.error('Failed to load app settings:', error);
+      }
+    };
+
+    const handleSettingsUpdate = (updated: any) => {
+      const nextRate = Math.max(1, Math.min(10, Number(updated?.statusRefreshRate ?? 2)));
+      setRefreshMs(nextRate * 1000);
+    };
+
+    loadSettings();
+    const unsubscribe = window.electronAPI?.server?.onAppSettingsUpdated?.(handleSettingsUpdate);
+
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
+  }, []);
 
   useEffect(() => {
     const container = scrollRef.current;
@@ -311,6 +340,7 @@ export default function ServerList({ onServerClick }: ServerListProps) {
           getServersDiskUsage={getServersDiskUsage}
           getSystemContext={getSystemContext}
           isScrollingRef={isScrollingRef}
+          refreshMs={refreshMs}
           onReady={() => setStatsReady(true)}
         />
       )}

@@ -23,6 +23,117 @@ const SERVERS_DIR = path.join(HEXNODE_DIR, 'servers');
 const BACKUPS_DIR = path.join(HEXNODE_DIR, 'backups');
 const CONFIG_FILE = path.join(HEXNODE_DIR, 'servers.json');
 
+// Auto-backup scheduling
+let backupTimer = null;
+let backupInFlight = false;
+const backupLastRun = new Map(); // Map<serverName, timestampMs>
+
+function formatBackupTimestamp(date = new Date()) {
+  const pad = (value) => String(value).padStart(2, '0');
+  return [
+    date.getFullYear(),
+    pad(date.getMonth() + 1),
+    pad(date.getDate())
+  ].join('') + '-' + [
+    pad(date.getHours()),
+    pad(date.getMinutes()),
+    pad(date.getSeconds())
+  ].join('');
+}
+
+async function getLatestBackupTime(serverName, backupsDir) {
+  try {
+    const serverBackupDir = path.join(backupsDir, serverName);
+    const entries = await fs.readdir(serverBackupDir, { withFileTypes: true });
+    const backupDirs = entries
+      .filter(entry => entry.isDirectory())
+      .map(entry => entry.name)
+      .sort()
+      .reverse();
+
+    if (backupDirs.length === 0) return 0;
+    const latestName = backupDirs[0];
+    const match = latestName.match(/^(\d{8})-(\d{6})$/);
+    if (!match) return 0;
+    const datePart = match[1];
+    const timePart = match[2];
+    const iso = `${datePart.slice(0, 4)}-${datePart.slice(4, 6)}-${datePart.slice(6, 8)}T${timePart.slice(0, 2)}:${timePart.slice(2, 4)}:${timePart.slice(4, 6)}`;
+    const parsed = Date.parse(iso);
+    return Number.isNaN(parsed) ? 0 : parsed;
+  } catch (error) {
+    return 0;
+  }
+}
+
+async function pruneBackups(serverName, backupsDir, maxBackups) {
+  if (!maxBackups || maxBackups <= 0) return;
+  try {
+    const serverBackupDir = path.join(backupsDir, serverName);
+    const entries = await fs.readdir(serverBackupDir, { withFileTypes: true });
+    const backupDirs = entries
+      .filter(entry => entry.isDirectory())
+      .map(entry => entry.name)
+      .sort()
+      .reverse();
+
+    const excess = backupDirs.slice(maxBackups);
+    for (const dirName of excess) {
+      const fullPath = path.join(serverBackupDir, dirName);
+      await fs.rm(fullPath, { recursive: true, force: true });
+    }
+  } catch (error) {
+    // Ignore prune errors
+  }
+}
+
+async function runAutoBackups() {
+  if (backupInFlight) return;
+  backupInFlight = true;
+  try {
+    const settings = await getAppSettings();
+    if (!settings.autoBackup) return;
+
+    const backupsDir = settings.backupsDirectory || BACKUPS_DIR;
+    const serversDir = settings.serversDirectory || SERVERS_DIR;
+    const intervalHours = Math.max(1, Number(settings.backupInterval || 24));
+    const intervalMs = intervalHours * 60 * 60 * 1000;
+    const maxBackups = Math.max(1, Number(settings.maxBackups || 10));
+
+    await fs.mkdir(backupsDir, { recursive: true });
+
+    const servers = await listServers();
+    const now = Date.now();
+
+    for (const server of servers) {
+      const lastRun = backupLastRun.get(server.name) || await getLatestBackupTime(server.name, backupsDir);
+      if (now - lastRun < intervalMs) continue;
+
+      const serverPath = path.join(serversDir, server.name);
+      const serverBackupDir = path.join(backupsDir, server.name);
+      const timestamp = formatBackupTimestamp(new Date());
+      const targetDir = path.join(serverBackupDir, timestamp);
+
+      await fs.mkdir(serverBackupDir, { recursive: true });
+      await fs.cp(serverPath, targetDir, { recursive: true });
+      backupLastRun.set(server.name, now);
+
+      await pruneBackups(server.name, backupsDir, maxBackups);
+    }
+  } catch (error) {
+    // Ignore auto-backup errors
+  } finally {
+    backupInFlight = false;
+  }
+}
+
+function startAutoBackupLoop() {
+  if (backupTimer) return;
+  backupTimer = setInterval(() => {
+    runAutoBackups();
+  }, 5 * 60 * 1000); // check every 5 minutes
+  runAutoBackups();
+}
+
 // Ensure directories exist
 async function ensureDirectories() {
   await fs.mkdir(HEXNODE_DIR, { recursive: true });
@@ -77,7 +188,28 @@ function normalizeRamGB(value, fallback) {
 }
 
 // Get system information
+const systemInfoCache = { timestamp: 0, value: null };
+let systemInfoPending = null;
+
+function execFilePromise(command, args, options) {
+  return new Promise((resolve, reject) => {
+    execFile(command, args, options, (error, stdout) => {
+      if (error) return reject(error);
+      resolve(stdout);
+    });
+  });
+}
+
 async function getSystemInfo() {
+  const now = Date.now();
+  if (systemInfoCache.value && now - systemInfoCache.timestamp < 15000) {
+    return systemInfoCache.value;
+  }
+  if (systemInfoPending) {
+    return await systemInfoPending;
+  }
+
+  systemInfoPending = (async () => {
   try {
     const totalMemoryGB = Math.round(os.totalmem() / (1024 * 1024 * 1024));
     const freeMemoryGB = Math.round(os.freemem() / (1024 * 1024 * 1024));
@@ -90,14 +222,10 @@ async function getSystemInfo() {
     
     try {
       if (os.platform() === 'win32') {
-        const { execSync } = require('child_process');
-        // Use PowerShell as primary method (wmic is deprecated in Windows 11)
         try {
-          const result = execSync(`powershell -NoProfile -Command "Get-WmiObject -Class Win32_LogicalDisk -Filter 'DriveType=3' | Select-Object DeviceID,VolumeName,Size,FreeSpace | ConvertTo-Json"`, {
-            encoding: 'utf8',
+          const result = await execFilePromise('powershell', ['-NoProfile', '-Command', "Get-WmiObject -Class Win32_LogicalDisk -Filter 'DriveType=3' | Select-Object DeviceID,VolumeName,Size,FreeSpace | ConvertTo-Json"], {
             timeout: 10000,
-            windowsHide: true,
-            stdio: ['ignore', 'pipe', 'ignore'] // Suppress stderr to prevent spam
+            windowsHide: true
           });
           const parsed = result.trim();
           if (parsed) {
@@ -120,14 +248,10 @@ async function getSystemInfo() {
             }
           }
         } catch (err) {
-          // Silently fail - don't spam console with errors
-          // Try fallback with Get-CimInstance (newer PowerShell cmdlet)
           try {
-            const result = execSync(`powershell -NoProfile -Command "Get-CimInstance -ClassName Win32_LogicalDisk -Filter 'DriveType=3' | Select-Object DeviceID,VolumeName,Size,FreeSpace | ConvertTo-Json"`, {
-              encoding: 'utf8',
+            const result = await execFilePromise('powershell', ['-NoProfile', '-Command', "Get-CimInstance -ClassName Win32_LogicalDisk -Filter 'DriveType=3' | Select-Object DeviceID,VolumeName,Size,FreeSpace | ConvertTo-Json"], {
               timeout: 10000,
-              windowsHide: true,
-              stdio: ['ignore', 'pipe', 'ignore']
+              windowsHide: true
             });
             const parsed = result.trim();
             if (parsed) {
@@ -153,53 +277,51 @@ async function getSystemInfo() {
             // Silently fail - no drives will be shown
           }
         }
-      } else {
-        // Linux/Mac - try to get disk info
+      } else if (process.platform === 'darwin') {
         try {
-          const { execSync } = require('child_process');
-          if (process.platform === 'darwin') {
-            // macOS - get all mounted volumes
-            const result = execSync(`df -g | awk 'NR>1 {print $1 " " $2 " " $4}'`, { encoding: 'utf8' });
-            const lines = result.trim().split('\n');
-            lines.forEach(line => {
-              const parts = line.trim().split(/\s+/);
-              if (parts.length >= 3) {
-                const mountPoint = parts[0];
-                const total = parseInt(parts[1]);
-                const free = parseInt(parts[2]);
-                if (total > 0 && free >= 0) {
-                  drives.push({
-                    letter: mountPoint,
-                    label: mountPoint.split('/').pop() || mountPoint,
-                    totalGB: total,
-                    freeGB: free,
-                    usedGB: total - free
-                  });
-                }
+          const result = await execFilePromise('df', ['-g'], { timeout: 10000 });
+          const lines = result.trim().split('\n').slice(1);
+          lines.forEach(line => {
+            const parts = line.trim().split(/\s+/);
+            if (parts.length >= 3) {
+              const mountPoint = parts[0];
+              const total = parseInt(parts[1]);
+              const free = parseInt(parts[2]);
+              if (total > 0 && free >= 0) {
+                drives.push({
+                  letter: mountPoint,
+                  label: mountPoint.split('/').pop() || mountPoint,
+                  totalGB: total,
+                  freeGB: free,
+                  usedGB: total - free
+                });
               }
-            });
-          } else {
-            // Linux - get all mounted filesystems
-            const result = execSync(`df -BG | awk 'NR>1 {print $1 " " $2 " " $4}'`, { encoding: 'utf8' });
-            const lines = result.trim().split('\n');
-            lines.forEach(line => {
-              const parts = line.trim().split(/\s+/);
-              if (parts.length >= 3) {
-                const mountPoint = parts[0];
-                const total = parseInt(parts[1]) || 0;
-                const free = parseInt(parts[2]) || 0;
-                if (total > 0 && free >= 0) {
-                  drives.push({
-                    letter: mountPoint,
-                    label: mountPoint.split('/').pop() || mountPoint,
-                    totalGB: total,
-                    freeGB: free,
-                    usedGB: total - free
-                  });
-                }
+            }
+          });
+        } catch (err) {
+          // Silently fail - no drives will be shown
+        }
+      } else {
+        try {
+          const result = await execFilePromise('df', ['-BG'], { timeout: 10000 });
+          const lines = result.trim().split('\n').slice(1);
+          lines.forEach(line => {
+            const parts = line.trim().split(/\s+/);
+            if (parts.length >= 3) {
+              const mountPoint = parts[0];
+              const total = parseInt(parts[1]) || 0;
+              const free = parseInt(parts[2]) || 0;
+              if (total > 0 && free >= 0) {
+                drives.push({
+                  letter: mountPoint,
+                  label: mountPoint.split('/').pop() || mountPoint,
+                  totalGB: total,
+                  freeGB: free,
+                  usedGB: total - free
+                });
               }
-            });
-          }
+            }
+          });
         } catch (err) {
           // Silently fail - no drives will be shown
         }
@@ -208,7 +330,7 @@ async function getSystemInfo() {
       console.error('Failed to get storage info:', error);
     }
 
-    return {
+    const payload = {
       cpu: {
         model: cpuModel,
         cores: cpuCores,
@@ -224,8 +346,11 @@ async function getSystemInfo() {
       arch: os.arch(),
       hostname: os.hostname()
     };
+    systemInfoCache.value = payload;
+    systemInfoCache.timestamp = Date.now();
+    return payload;
   } catch (error) {
-    return {
+    const payload = {
       cpu: { model: 'Unknown', cores: 0, threads: 0 },
       memory: { totalGB: 0, freeGB: 0, usedGB: 0 },
       storage: { totalGB: 0, freeGB: 0, usedGB: 0 },
@@ -233,6 +358,16 @@ async function getSystemInfo() {
       arch: os.arch(),
       hostname: os.hostname()
     };
+    systemInfoCache.value = payload;
+    systemInfoCache.timestamp = Date.now();
+    return payload;
+  }
+  })();
+
+  try {
+    return await systemInfoPending;
+  } finally {
+    systemInfoPending = null;
   }
 }
 
@@ -240,7 +375,21 @@ async function getSystemInfo() {
 async function isSetupComplete() {
   try {
     const configs = await loadServerConfigs();
-    return configs._setupComplete === true;
+    if (configs._setupComplete === true) {
+      return true;
+    }
+    const hasSettings = !!configs._appSettings;
+    const hasServers = Object.keys(configs).some((key) => !key.startsWith('_'));
+    if (hasSettings || hasServers) {
+      configs._setupComplete = true;
+      try {
+        await saveServerConfigs(configs);
+      } catch {
+        // Ignore persistence errors, still treat as complete
+      }
+      return true;
+    }
+    return false;
   } catch {
     return false;
   }
@@ -299,6 +448,7 @@ async function saveAppSettings(settings) {
   if (finalSettings.backupsDirectory && finalSettings.autoBackup) {
     await fs.mkdir(finalSettings.backupsDirectory, { recursive: true });
   }
+  return finalSettings;
 }
 
 // Mark setup as complete
@@ -1665,9 +1815,11 @@ async function deleteServer(serverName) {
 // Cache for server usage to reduce stuttering
 const serverUsageCache = new Map(); // Map<serverName, { usage, timestamp }>
 const USAGE_CACHE_TTL = 1000; // 1 second cache
+const USAGE_REFRESH_INTERVAL = 2000;
 let aggregateUsageCache = { totalCPU: 0, totalRAM: 0, totalRAMMB: 0, serverUsages: {}, timestamp: 0 };
 let usageRefreshTimer = null;
 let usageRefreshInFlight = false;
+let diskUsageCache = { timestamp: 0, payload: null };
 
 function startUsageRefreshLoop() {
   if (usageRefreshTimer) return;
@@ -1681,7 +1833,7 @@ function startUsageRefreshLoop() {
     } finally {
       usageRefreshInFlight = false;
     }
-  }, 1000);
+  }, USAGE_REFRESH_INTERVAL);
 }
 
 // Get server usage (CPU, RAM) for a single server
@@ -1883,6 +2035,9 @@ async function getAllServersUsage() {
 // Get disk usage for all servers
 async function getServersDiskUsage() {
   try {
+    if (diskUsageCache.payload && Date.now() - diskUsageCache.timestamp < 15000) {
+      return diskUsageCache.payload;
+    }
     const settings = await getAppSettings();
     const serversDir = settings.serversDirectory || SERVERS_DIR;
     const servers = await listServers();
@@ -1920,12 +2075,14 @@ async function getServersDiskUsage() {
       }
     }
 
-    return {
+    const payload = {
       success: true,
       totalSize,
       totalSizeGB: totalSize / (1024 * 1024 * 1024),
       serverSizes
     };
+    diskUsageCache = { timestamp: Date.now(), payload };
+    return payload;
   } catch (error) {
     return { success: false, error: error.message };
   }
@@ -2352,7 +2509,7 @@ async function checkJarSupportsPlugins(serverName) {
 }
 
 // Get plugins from Modrinth API with pagination to get all results
-async function getModrinthPlugins(minecraftVersion = null, limit = 100) {
+async function getModrinthPlugins(minecraftVersion = null, limit = 200) {
   return new Promise(async (resolve, reject) => {
     try {
       // Build facets array properly
@@ -2396,6 +2553,11 @@ async function getModrinthPlugins(minecraftVersion = null, limit = 100) {
         });
         
         allPlugins = allPlugins.concat(pageResults.hits);
+        if (limit && allPlugins.length >= limit) {
+          allPlugins = allPlugins.slice(0, limit);
+          hasMore = false;
+          break;
+        }
         
         // Check if there are more results
         if (pageResults.hits.length < pageSize || allPlugins.length >= pageResults.total) {
@@ -2734,4 +2896,4 @@ module.exports = {
 
 // Start background usage polling
 startUsageRefreshLoop();
-
+startAutoBackupLoop();

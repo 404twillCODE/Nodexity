@@ -1,5 +1,7 @@
-const { app, BrowserWindow, ipcMain, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, Tray, Menu, nativeImage } = require('electron');
 const path = require('path');
+const fs = require('fs');
+const https = require('https');
 const isDev = !app.isPackaged || process.env.NODE_ENV === 'development';
 
 // Clear module cache and reload serverManager to ensure latest functions are available
@@ -15,6 +17,142 @@ if (!serverManager.getModrinthPlugins) {
 }
 
 let mainWindow = null;
+let tray = null;
+let isQuitting = false;
+let minimizeToTrayEnabled = false;
+let pendingUpdateCheck = null;
+let cachedSettings = null;
+
+function compareVersions(a, b) {
+  const partsA = String(a).replace(/^v/i, '').split('.').map(Number);
+  const partsB = String(b).replace(/^v/i, '').split('.').map(Number);
+  const maxLen = Math.max(partsA.length, partsB.length);
+  for (let i = 0; i < maxLen; i += 1) {
+    const aVal = partsA[i] || 0;
+    const bVal = partsB[i] || 0;
+    if (aVal > bVal) return 1;
+    if (aVal < bVal) return -1;
+  }
+  return 0;
+}
+
+function resolveTrayIcon() {
+  const candidates = [
+    path.join(app.getAppPath(), 'Graphics', 'Logo.png'),
+    path.join(app.getAppPath(), '..', 'Graphics', 'Logo.png'),
+    path.join(__dirname, '..', '..', 'Graphics', 'Logo.png')
+  ];
+  const iconPath = candidates.find((candidate) => fs.existsSync(candidate));
+  if (!iconPath) return nativeImage.createEmpty();
+  return nativeImage.createFromPath(iconPath);
+}
+
+function ensureTray() {
+  if (tray) return;
+  const icon = resolveTrayIcon();
+  tray = new Tray(icon);
+  tray.setToolTip('HexNode');
+  const contextMenu = Menu.buildFromTemplate([
+    {
+      label: 'Show HexNode',
+      click: () => {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.show();
+          mainWindow.focus();
+        }
+      }
+    },
+    {
+      label: 'Quit',
+      click: () => {
+        isQuitting = true;
+        app.quit();
+      }
+    }
+  ]);
+  tray.setContextMenu(contextMenu);
+  tray.on('click', () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.show();
+      mainWindow.focus();
+    }
+  });
+}
+
+function destroyTray() {
+  if (tray) {
+    tray.destroy();
+    tray = null;
+  }
+}
+
+function scheduleUpdateCheck() {
+  if (pendingUpdateCheck) return;
+  pendingUpdateCheck = setTimeout(() => {
+    pendingUpdateCheck = null;
+    checkForUpdates();
+  }, 5000);
+}
+
+function checkForUpdates() {
+  const settings = cachedSettings || {};
+  if (!settings.autoUpdateCheck) return;
+
+  const requestOptions = {
+    headers: {
+      'User-Agent': 'HexNode'
+    }
+  };
+
+  https.get('https://api.github.com/repos/404twillCODE/Hexnode/releases/latest', requestOptions, (res) => {
+    let data = '';
+    res.on('data', (chunk) => {
+      data += chunk;
+    });
+    res.on('end', () => {
+      try {
+        if (!data) return;
+        const payload = JSON.parse(data);
+        const latestVersion = payload.tag_name || payload.name;
+        if (!latestVersion) return;
+        const currentVersion = app.getVersion();
+        if (compareVersions(latestVersion, currentVersion) > 0) {
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('update-available', {
+              version: latestVersion,
+              url: payload.html_url || 'https://github.com/404twillCODE/Hexnode/releases'
+            });
+          }
+        }
+      } catch (error) {
+        // Ignore update check errors
+      }
+    });
+  }).on('error', () => {
+    // Ignore update check errors
+  });
+}
+
+function applyAppSettings(settings) {
+  cachedSettings = settings || cachedSettings || {};
+  minimizeToTrayEnabled = !!cachedSettings.minimizeToTray;
+
+  if (cachedSettings.startWithWindows !== undefined) {
+    try {
+      app.setLoginItemSettings({
+        openAtLogin: !!cachedSettings.startWithWindows
+      });
+    } catch (error) {
+      // Ignore login item errors
+    }
+  }
+
+  if (!minimizeToTrayEnabled) {
+    destroyTray();
+  }
+
+  scheduleUpdateCheck();
+}
 
 function createWindow() {
   const win = new BrowserWindow({
@@ -34,6 +172,22 @@ function createWindow() {
   });
 
   mainWindow = win;
+
+  win.on('minimize', (event) => {
+    if (minimizeToTrayEnabled && !isQuitting) {
+      event.preventDefault();
+      win.hide();
+      ensureTray();
+    }
+  });
+
+  win.on('close', (event) => {
+    if (minimizeToTrayEnabled && !isQuitting) {
+      event.preventDefault();
+      win.hide();
+      ensureTray();
+    }
+  });
 
   if (isDev) {
     win.loadURL('http://localhost:3000');
@@ -86,11 +240,22 @@ ipcMain.handle('get-app-settings', async () => {
 });
 
 ipcMain.handle('save-app-settings', async (event, settings) => {
-  return await serverManager.saveAppSettings(settings);
+  const updated = await serverManager.saveAppSettings(settings);
+  applyAppSettings(updated);
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('app-settings-updated', updated);
+  }
+  return updated;
 });
 
 ipcMain.handle('complete-setup', async (event, settings) => {
-  return await serverManager.completeSetup(settings);
+  await serverManager.completeSetup(settings);
+  const updated = await serverManager.getAppSettings();
+  applyAppSettings(updated);
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('app-settings-updated', updated);
+  }
+  return updated;
 });
 
 ipcMain.handle('reset-setup', async () => {
@@ -373,6 +538,11 @@ ipcMain.handle('get-servers-disk-usage', async () => {
 
 app.whenReady().then(() => {
   createWindow();
+  serverManager.getAppSettings().then((settings) => {
+    applyAppSettings(settings);
+  }).catch(() => {
+    // Ignore settings load errors
+  });
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
@@ -398,6 +568,7 @@ async function killAllServers() {
 
 // Handle before-quit event (more reliable than window-all-closed)
 app.on('before-quit', async (event) => {
+  isQuitting = true;
   event.preventDefault(); // Prevent immediate quit
   await killAllServers();
   app.exit(0); // Force exit after killing servers
