@@ -77,10 +77,21 @@ export default function ConsolePanel({ selectedServer: propSelectedServer }: Con
     }
   }, [activeServer, internalSelectedServer, propSelectedServer]);
 
-  // Clear console when selected server changes (from prop)
+  // Clear console and reset scroll intent when selected server changes (from prop)
   useEffect(() => {
     if (propSelectedServer !== undefined) {
       setLines([]);
+      userScrolledRef.current = false;
+      const t1 = setTimeout(() => {
+        if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+      }, 100);
+      const t2 = setTimeout(() => {
+        if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+      }, 350);
+      return () => {
+        clearTimeout(t1);
+        clearTimeout(t2);
+      };
     }
   }, [propSelectedServer]);
 
@@ -133,29 +144,19 @@ export default function ConsolePanel({ selectedServer: propSelectedServer }: Con
     return () => container.removeEventListener('scroll', handleScroll);
   }, []);
 
-  // Throttled scroll update to prevent lag
+  // Scroll to bottom when lines change, after layout (double rAF so scrollHeight is correct)
   useEffect(() => {
-    if (autoScroll && scrollRef.current) {
-      // Clear any pending scroll
-      if (scrollTimeoutRef.current) {
-        clearTimeout(scrollTimeoutRef.current);
-      }
-
-      userScrolledRef.current = false;
-      scrollTimeoutRef.current = setTimeout(() => {
+    if (!autoScroll || !scrollRef.current || userScrolledRef.current) return;
+    let rafId: number;
+    rafId = requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
         if (scrollRef.current && autoScroll) {
-          const container = scrollRef.current;
-          container.scrollTop = container.scrollHeight;
-          lastScrollTopRef.current = container.scrollTop;
+          scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+          lastScrollTopRef.current = scrollRef.current.scrollTop;
         }
-      }, 16); // ~60fps
-    }
-    
-    return () => {
-      if (scrollTimeoutRef.current) {
-        clearTimeout(scrollTimeoutRef.current);
-      }
-    };
+      });
+    });
+    return () => cancelAnimationFrame(rafId);
   }, [lines, autoScroll]);
 
   // Debounced search query
@@ -205,6 +206,9 @@ export default function ConsolePanel({ selectedServer: propSelectedServer }: Con
   const handleClear = () => {
     setLines([]);
   };
+
+  // Server log lines often start with [HH:mm:ss] - don't duplicate with our timestamp
+  const lineHasServerTimestamp = (text: string) => /^\s*\[\d{1,2}:\d{2}(:\d{2})?\]/.test(text);
 
   // Common Minecraft server commands for autocomplete
   const commonCommands = [
@@ -497,7 +501,7 @@ export default function ConsolePanel({ selectedServer: propSelectedServer }: Con
                               : 'whitespace-pre'
                           }`}
                           dangerouslySetInnerHTML={{
-                            __html: `${settings?.showTimestamps !== false ? `[${line.timestamp}] ` : ''}${lineText}`
+                            __html: `${settings?.showTimestamps !== false && !lineHasServerTimestamp(lineText) ? `[${line.timestamp}] ` : ''}${lineText}`
                               .replace(/&/g, '&amp;')
                               .replace(/</g, '&lt;')
                               .replace(/>/g, '&gt;')
@@ -515,7 +519,7 @@ export default function ConsolePanel({ selectedServer: propSelectedServer }: Con
                               : 'whitespace-pre'
                           }`}
                         >
-                          {settings?.showTimestamps !== false ? `[${line.timestamp}] ` : ''}{lineText}
+                          {settings?.showTimestamps !== false && !lineHasServerTimestamp(lineText) ? `[${line.timestamp}] ` : ''}{lineText}
                         </span>
                       )}
                     </div>

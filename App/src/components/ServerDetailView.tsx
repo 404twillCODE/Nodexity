@@ -212,6 +212,29 @@ export default function ServerDetailView({ serverName, onBack }: ServerDetailVie
     };
   }, [serverName, settings]);
 
+  // When switching to a server, reset scroll intent and schedule scroll-to-bottom (logs load async)
+  const scrollToBottomNextPaintRef = useRef(false);
+  useEffect(() => {
+    if (!serverName) return;
+    userScrolledRef.current = false;
+    scrollToBottomNextPaintRef.current = true;
+    // Fallback: scroll again after delays so we hit bottom once logs have loaded
+    const t1 = setTimeout(() => {
+      if (scrollRef.current) {
+        scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+      }
+    }, 150);
+    const t2 = setTimeout(() => {
+      if (scrollRef.current) {
+        scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+      }
+    }, 400);
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+    };
+  }, [serverName]);
+
   // Track user scroll to prevent auto-scroll when user is reading
   useEffect(() => {
     const container = scrollRef.current;
@@ -227,30 +250,32 @@ export default function ServerDetailView({ serverName, onBack }: ServerDetailVie
     return () => container.removeEventListener('scroll', handleScroll);
   }, []);
 
-  // Throttled scroll update to prevent lag
-  useEffect(() => {
-    if (autoScroll && scrollRef.current) {
-      // Clear any pending scroll
-      if (scrollTimeoutRef.current) {
-        clearTimeout(scrollTimeoutRef.current);
-      }
+  // Scroll to bottom when lines change (after paint so scrollHeight is correct)
+  const scrollToBottom = useCallback(() => {
+    const container = scrollRef.current;
+    if (!container) return;
+    container.scrollTop = container.scrollHeight;
+    lastScrollTopRef.current = container.scrollTop;
+  }, []);
 
-      userScrolledRef.current = false;
-      scrollTimeoutRef.current = setTimeout(() => {
-        if (scrollRef.current && autoScroll) {
-          const container = scrollRef.current;
-          container.scrollTop = container.scrollHeight;
-          lastScrollTopRef.current = container.scrollTop;
-        }
-      }, 16); // ~60fps
+  // When we have lines and either auto-scroll is on or we just switched server, scroll to bottom after layout
+  useEffect(() => {
+    if (lines.length === 0) return;
+    const shouldScroll = (autoScroll && !userScrolledRef.current) || scrollToBottomNextPaintRef.current;
+    if (!shouldScroll) return;
+
+    if (scrollToBottomNextPaintRef.current) {
+      scrollToBottomNextPaintRef.current = false;
     }
-    
-    return () => {
-      if (scrollTimeoutRef.current) {
-        clearTimeout(scrollTimeoutRef.current);
-      }
-    };
-  }, [lines, autoScroll]);
+
+    // Double rAF: run after React has committed and browser has laid out, so scrollHeight is correct
+    const raf1 = requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        scrollToBottom();
+      });
+    });
+    return () => cancelAnimationFrame(raf1);
+  }, [lines, autoScroll, scrollToBottom]);
 
   // Debounced search query
   const [debouncedSearchQuery, setDebouncedSearchQuery] = useState("");
@@ -268,6 +293,9 @@ export default function ServerDetailView({ serverName, onBack }: ServerDetailVie
       }
     };
   }, [searchQuery]);
+
+  // Server log lines often start with [HH:mm:ss] - don't duplicate with our timestamp
+  const lineHasServerTimestamp = (text: string) => /^\s*\[\d{1,2}:\d{2}(:\d{2})?\]/.test(text);
 
   // Filter and search lines (memoized and optimized)
   const filteredLines = useMemo(() => {
@@ -769,7 +797,7 @@ export default function ServerDetailView({ serverName, onBack }: ServerDetailVie
                                   : 'whitespace-pre'
                               }`}
                               dangerouslySetInnerHTML={{
-                                __html: `${settings?.showTimestamps !== false ? `[${line.timestamp}] ` : ''}${lineText}`
+                                __html: `${settings?.showTimestamps !== false && !lineHasServerTimestamp(lineText) ? `[${line.timestamp}] ` : ''}${lineText}`
                                   .replace(/&/g, '&amp;')
                                   .replace(/</g, '&lt;')
                                   .replace(/>/g, '&gt;')
@@ -787,7 +815,7 @@ export default function ServerDetailView({ serverName, onBack }: ServerDetailVie
                                   : 'whitespace-pre'
                               }`}
                             >
-                              {settings?.showTimestamps !== false ? `[${line.timestamp}] ` : ''}{lineText}
+                              {settings?.showTimestamps !== false && !lineHasServerTimestamp(lineText) ? `[${line.timestamp}] ` : ''}{lineText}
                             </span>
                           )}
                         </div>
