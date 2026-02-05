@@ -573,7 +573,7 @@ export default function ServerDetailView({ serverName, onBack }: ServerDetailVie
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [activeTab, serverName]);
-  
+
   // Show loading state while servers are loading (after all hooks)
   if (loading) {
     return (

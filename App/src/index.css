@@ -350,28 +350,74 @@
     -webkit-app-region: no-drag;
   }
 
+  /* Global dark scrollbars (all overflow areas) */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(46, 242, 162, 0.4) #141414;
+  }
+
+  *::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  *::-webkit-scrollbar-track {
+    background: #0f0f0f;
+    border-radius: 0;
+  }
+
+  *::-webkit-scrollbar-thumb {
+    background: rgba(46, 242, 162, 0.35);
+    border-radius: 5px;
+    border: 2px solid #0f0f0f;
+    min-height: 40px;
+  }
+
+  *::-webkit-scrollbar-thumb:hover {
+    background: rgba(46, 242, 162, 0.55);
+  }
+
+  *::-webkit-scrollbar-corner {
+    background: #0f0f0f;
+  }
+
+  /* No arrow buttons - keep scrollbar minimal on WebKit */
+  *::-webkit-scrollbar-button {
+    display: none;
+  }
+
   .custom-scrollbar {
     scrollbar-width: thin;
-    scrollbar-color: rgba(46, 242, 162, 0.3) rgba(26, 26, 26, 0.5);
+    scrollbar-color: rgba(46, 242, 162, 0.4) #141414;
   }
 
   .custom-scrollbar::-webkit-scrollbar {
-    width: 8px;
+    width: 10px;
+    height: 10px;
   }
 
   .custom-scrollbar::-webkit-scrollbar-track {
-    background: rgba(26, 26, 26, 0.5);
-    border-radius: 4px;
+    background: #0f0f0f;
+    border-radius: 0;
   }
 
   .custom-scrollbar::-webkit-scrollbar-thumb {
-    background: rgba(46, 242, 162, 0.3);
-    border-radius: 4px;
-    transition: background 0.2s ease;
+    background: rgba(46, 242, 162, 0.35);
+    border-radius: 5px;
+    border: 2px solid #0f0f0f;
+    min-height: 40px;
   }
 
   .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-    background: rgba(46, 242, 162, 0.5);
+    background: rgba(46, 242, 162, 0.55);
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-corner {
+    background: #0f0f0f;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-button {
+    display: none;
   }
 
   /* Terminal Loader Styles */

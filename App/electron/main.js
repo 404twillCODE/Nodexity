@@ -8,12 +8,18 @@ const isDev = !app.isPackaged || process.env.NODE_ENV === 'development';
 delete require.cache[require.resolve('./serverManager')];
 const serverManager = require('./serverManager');
 
-// Verify new functions are available (for debugging)
+// Verify required serverManager functions are available (for debugging)
 if (!serverManager.checkJarSupportsPlugins) {
   console.warn('WARNING: checkJarSupportsPlugins not found in serverManager');
 }
 if (!serverManager.getModrinthPlugins) {
   console.warn('WARNING: getModrinthPlugins not found in serverManager');
+}
+if (!serverManager.readServerFileBinary) {
+  console.warn('WARNING: readServerFileBinary not found in serverManager - restart the app to load binary file support');
+}
+if (!serverManager.writeServerFileBinary) {
+  console.warn('WARNING: writeServerFileBinary not found in serverManager - restart the app to load binary file support');
 }
 
 let mainWindow = null;
@@ -377,6 +383,10 @@ ipcMain.handle('create-server', async (event, serverName, serverType, version, r
   return await serverManager.createServer(serverName, serverType, version, ramGB, port, manualJarPath, displayName);
 });
 
+ipcMain.handle('import-server', async (event, sourceFolderPath, serverName) => {
+  return await serverManager.importServer(sourceFolderPath, serverName);
+});
+
 ipcMain.handle('start-server', async (event, serverName, ramGB) => {
   const result = await serverManager.startServer(serverName, ramGB);
   
@@ -445,6 +455,22 @@ ipcMain.handle('write-server-file', async (event, serverName, filePath, content)
   return await serverManager.writeServerFile(serverName, filePath, content);
 });
 
+ipcMain.handle('read-server-file-binary', async (event, serverName, filePath) => {
+  return await serverManager.readServerFileBinary(serverName, filePath);
+});
+
+ipcMain.handle('write-server-file-binary', async (event, serverName, filePath, contentBase64, wasGzipped) => {
+  return await serverManager.writeServerFileBinary(serverName, filePath, contentBase64, wasGzipped === true);
+});
+
+ipcMain.handle('read-server-file-nbt', async (event, serverName, filePath) => {
+  return await serverManager.readServerFileNbt(serverName, filePath);
+});
+
+ipcMain.handle('write-server-file-nbt', async (event, serverName, filePath, parsed, nbtFormat) => {
+  return await serverManager.writeServerFileNbt(serverName, filePath, parsed, nbtFormat);
+});
+
 ipcMain.handle('list-plugins', async (event, serverName) => {
   return await serverManager.listPlugins(serverName);
 });
@@ -498,6 +524,10 @@ ipcMain.handle('install-modrinth-plugin', async (event, serverName, projectId, m
 
 ipcMain.handle('list-worlds', async (event, serverName) => {
   return await serverManager.listWorlds(serverName);
+});
+
+ipcMain.handle('delete-world', async (event, serverName, worldName) => {
+  return await serverManager.deleteWorld(serverName, worldName);
 });
 
 ipcMain.handle('get-server-properties', async (event, serverName) => {

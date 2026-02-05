@@ -6,9 +6,12 @@ import { useServerManager } from "../hooks/useServerManager";
 type ServerType = 'paper' | 'spigot' | 'vanilla' | 'fabric' | 'forge' | 'purpur' | 'velocity' | 'waterfall' | 'bungeecord' | 'manual';
 
 export default function CreateServerButton() {
-  const { createServer, startServer } = useServerManager();
+  const { createServer, startServer, refreshServers } = useServerManager();
   const [isCreating, setIsCreating] = useState(false);
   const [showInput, setShowInput] = useState(false);
+  const [showImportFlow, setShowImportFlow] = useState(false);
+  const [importFolderPath, setImportFolderPath] = useState<string | null>(null);
+  const [importServerName, setImportServerName] = useState("");
   const [serverName, setServerName] = useState("");
   const [serverType, setServerType] = useState<ServerType>('paper');
   const [selectedVersion, setSelectedVersion] = useState<string | null>(null);
@@ -265,23 +268,21 @@ export default function CreateServerButton() {
     setCreatingStatus(serverType === 'manual' ? 'Copying server files...' : 'Creating server files...');
     setIsCreating(true);
     try {
-      // Replace spaces with dashes for folder name, but keep original for display
-      const sanitizedServerName = serverName.trim().replace(/\s+/g, '-');
-      const displayName = serverName.trim(); // Keep original with spaces for display
+      const name = serverName.trim();
       const serverRAM = ramGB || settings?.defaultRAM || 4;
       const result = await createServer(
-        sanitizedServerName,
+        name,
         serverType,
         selectedVersion,
         serverRAM,
         serverPort,
         manualJarPath,
-        displayName // Pass display name separately
+        name
       );
       if (result.success) {
         if (autoStart) {
           setCreatingStatus("Starting server...");
-          const startResult = await startServer(sanitizedServerName, serverRAM);
+          const startResult = await startServer(name, serverRAM);
           if (!startResult.success) {
             setErrorMessage(startResult.error || "Server created, but failed to start.");
             return;
@@ -324,6 +325,9 @@ export default function CreateServerButton() {
 
   const handleCancel = () => {
     setShowInput(false);
+    setShowImportFlow(false);
+    setImportFolderPath(null);
+    setImportServerName("");
     setServerName("");
     setServerType('paper');
     setSelectedVersion(null);
@@ -334,6 +338,54 @@ export default function CreateServerButton() {
     setPortMessage(null);
     setPortAutoApplied(false);
     setAutoStart(true);
+    setErrorMessage(null);
+    setWarningMessage(null);
+  };
+
+  const handleChooseImportFolder = async () => {
+    if (!window.electronAPI?.server?.showFolderDialog) return;
+    setErrorMessage(null);
+    try {
+      const result = await window.electronAPI.server.showFolderDialog({
+        title: 'Select server folder to import',
+      });
+      if (result.success && result.path) {
+        setImportFolderPath(result.path);
+        const folderName = result.path.split(/[/\\]/).filter(Boolean).pop() || 'imported';
+        setImportServerName(folderName);
+      }
+    } catch (e) {
+      setErrorMessage('Failed to open folder dialog.');
+    }
+  };
+
+  const handleImport = async () => {
+    if (!importFolderPath || !window.electronAPI?.server?.importServer) return;
+    const name = importServerName.trim() || 'imported';
+    if (!name) {
+      setErrorMessage('Enter a server name.');
+      return;
+    }
+    setErrorMessage(null);
+    setCreatingStatus('Importing server...');
+    setIsCreating(true);
+    try {
+      const result = await window.electronAPI.server.importServer(importFolderPath, name);
+      if (result.success) {
+        await refreshServers();
+        setShowInput(false);
+        setShowImportFlow(false);
+        setImportFolderPath(null);
+        setImportServerName("");
+        setCreateStep(0);
+      } else {
+        setErrorMessage(result.error || 'Import failed.');
+      }
+    } catch (e: unknown) {
+      setErrorMessage(e instanceof Error ? e.message : 'Import failed.');
+    } finally {
+      setIsCreating(false);
+    }
   };
 
   const serverTypes = [
@@ -464,8 +516,52 @@ export default function CreateServerButton() {
             </div>
           )}
 
-          {/* Step 1: Server Type */}
-          {createStep === 0 && (
+          {/* Step 1: Server Type or Import */}
+          {createStep === 0 && showImportFlow && (
+            <div>
+              <label className="block text-sm text-text-secondary font-mono mb-3">
+                Import existing server
+              </label>
+              <p className="text-xs text-text-muted font-mono mb-4">
+                Choose a folder that contains an existing Minecraft server (with server.jar, server.properties, etc.). It will be copied into Hexnode.
+              </p>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-xs text-text-muted font-mono mb-1">Server folder</label>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={importFolderPath || ''}
+                      readOnly
+                      placeholder="No folder selected"
+                      className="flex-1 bg-background-secondary border border-border px-4 py-3 text-text-primary font-mono text-sm rounded"
+                    />
+                    <motion.button
+                      type="button"
+                      onClick={handleChooseImportFolder}
+                      disabled={isCreating}
+                      className="btn-secondary disabled:opacity-50"
+                      whileHover={!isCreating ? { scale: 1.02 } : {}}
+                      whileTap={!isCreating ? { scale: 0.98 } : {}}
+                    >
+                      CHOOSE FOLDER
+                    </motion.button>
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs text-text-muted font-mono mb-1">Server name (in Hexnode)</label>
+                  <input
+                    type="text"
+                    value={importServerName}
+                    onChange={(e) => setImportServerName(e.target.value)}
+                    placeholder="e.g. my-server"
+                    className="w-full bg-background-secondary border border-border px-4 py-3 text-text-primary font-mono text-sm rounded focus:outline-none focus:border-accent/50"
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+          {createStep === 0 && !showImportFlow && (
             <div>
               <label className="block text-sm text-text-secondary font-mono mb-3">
                 Server Type
@@ -571,10 +667,10 @@ export default function CreateServerButton() {
                   </div>
                 </div>
 
-                {/* Manual */}
+                {/* Manual + Import */}
                 <div>
                   <div className="text-xs text-text-muted font-mono mb-2 uppercase tracking-wider">Other</div>
-                  <div className="grid grid-cols-1 gap-3">
+                  <div className="grid grid-cols-2 gap-3">
                     {serverTypes.filter(t => t.category === 'manual').map((type) => (
                       <motion.button
                         key={type.id}
@@ -613,6 +709,27 @@ export default function CreateServerButton() {
                         </div>
                       </motion.button>
                     ))}
+                    <motion.button
+                      type="button"
+                      onClick={() => setShowImportFlow(true)}
+                      disabled={isCreating}
+                      className="relative p-4 rounded-lg border-2 border-border bg-background-secondary hover:border-accent/50 transition-all text-left disabled:opacity-50 disabled:cursor-not-allowed"
+                      whileHover={!isCreating ? { scale: 1.02 } : {}}
+                      whileTap={!isCreating ? { scale: 0.98 } : {}}
+                      style={{ pointerEvents: 'auto' }}
+                    >
+                      <div className="flex items-start gap-3">
+                        <span className="text-2xl">📥</span>
+                        <div className="flex-1 min-w-0">
+                          <div className="font-mono font-semibold text-text-primary text-sm mb-1">
+                            Import
+                          </div>
+                          <div className="text-xs text-text-muted font-mono">
+                            Import an existing server folder into Hexnode
+                          </div>
+                        </div>
+                      </div>
+                    </motion.button>
                   </div>
                 </div>
               </div>
@@ -745,7 +862,7 @@ export default function CreateServerButton() {
                   type="text"
                   value={serverName}
                   onChange={(e) => {
-                    // Allow spaces in display name, but folder will use dashes
+                    // Spaces are kept in the server name
                     setServerName(e.target.value);
                   }}
                   placeholder="My Server"
@@ -828,9 +945,16 @@ export default function CreateServerButton() {
         </div>
 
         <div className="flex gap-3 mt-8 relative z-10">
-          {createStep > 0 && (
+          {(createStep > 0 || showImportFlow) && (
             <motion.button
-              onClick={() => setCreateStep((prev) => Math.max(0, prev - 1))}
+              onClick={() => {
+                if (showImportFlow) {
+                  setShowImportFlow(false);
+                  setErrorMessage(null);
+                } else {
+                  setCreateStep((prev) => Math.max(0, prev - 1));
+                }
+              }}
               disabled={isCreating}
               className="btn-secondary disabled:opacity-50 disabled:cursor-not-allowed relative z-10"
               whileHover={{ scale: isCreating ? 1 : 1.02 }}
@@ -840,7 +964,18 @@ export default function CreateServerButton() {
               BACK
             </motion.button>
           )}
-          {createStep < 2 ? (
+          {showImportFlow ? (
+            <motion.button
+              onClick={handleImport}
+              disabled={isCreating || !importFolderPath || !importServerName.trim()}
+              className="btn-primary flex-1 disabled:opacity-50 disabled:cursor-not-allowed relative z-10"
+              whileHover={{ scale: (isCreating || !importFolderPath || !importServerName.trim()) ? 1 : 1.02 }}
+              whileTap={{ scale: (isCreating || !importFolderPath || !importServerName.trim()) ? 1 : 0.98 }}
+              style={{ pointerEvents: 'auto' }}
+            >
+              {isCreating ? 'IMPORTING...' : 'NEXT'}
+            </motion.button>
+          ) : createStep < 2 ? (
             <motion.button
               onClick={() => setCreateStep((prev) => Math.min(2, prev + 1))}
               disabled={
@@ -864,7 +999,7 @@ export default function CreateServerButton() {
             >
               {isCreating ? "CREATING..." : "CREATE SERVER"}
             </motion.button>
-          )}
+          ) )}
           <motion.button
             onClick={handleCancel}
             disabled={isCreating}

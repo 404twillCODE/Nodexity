@@ -2,10 +2,17 @@ const { spawn, execSync, execFile } = require('child_process');
 const fs = require('fs').promises;
 const path = require('path');
 const os = require('os');
+const zlib = require('zlib');
 const https = require('https');
 const http = require('http');
 const net = require('net');
 const si = require('systeminformation');
+let nbt;
+try {
+  nbt = require('prismarine-nbt');
+} catch (e) {
+  nbt = null;
+}
 
 // Get AppData\Roaming path (like Minecraft)
 function getAppDataPath() {
@@ -1524,6 +1531,74 @@ async function createServer(serverName = 'default', serverType = 'paper', versio
   }
 }
 
+// Import an existing server from a folder (copy into Hexnode servers dir and register)
+async function importServer(sourceFolderPath, serverName) {
+  try {
+    await ensureDirectories();
+    const settings = await getAppSettings();
+    const serversDir = settings.serversDirectory || SERVERS_DIR;
+
+    const srcStat = await fs.stat(sourceFolderPath);
+    if (!srcStat.isDirectory()) {
+      return { success: false, error: 'Selected path is not a folder' };
+    }
+
+    const safeName = (serverName || path.basename(sourceFolderPath))
+      .replace(/[<>:"/\\|?*\x00-\x1f]/g, '_')
+      .trim() || 'imported';
+    const serverPath = path.join(serversDir, safeName);
+
+    const exists = await fs.stat(serverPath).then(() => true).catch(() => false);
+    if (exists) {
+      const files = await fs.readdir(serverPath);
+      if (files.length > 0) {
+        return { success: false, error: `A server named "${safeName}" already exists. Choose a different name.` };
+      }
+    }
+
+    await fs.mkdir(serverPath, { recursive: true });
+    const entries = await fs.readdir(sourceFolderPath, { withFileTypes: true });
+    for (const entry of entries) {
+      const src = path.join(sourceFolderPath, entry.name);
+      const dest = path.join(serverPath, entry.name);
+      if (entry.isDirectory()) {
+        await fs.cp(src, dest, { recursive: true });
+      } else {
+        await fs.copyFile(src, dest);
+      }
+    }
+
+    let port = settings.defaultPort || 25565;
+    const propsPath = path.join(serverPath, 'server.properties');
+    try {
+      const content = await fs.readFile(propsPath, 'utf8');
+      const m = content.match(/server-port=(\d+)/m);
+      if (m) port = parseInt(m[1], 10);
+    } catch (e) {
+      // ignore
+    }
+
+    const files = await fs.readdir(serverPath);
+    const jarFile = files.find(f => f.endsWith('.jar'));
+    if (!jarFile) {
+      return { success: false, error: 'No JAR file found in the selected folder. Make sure it is a Minecraft server directory.' };
+    }
+
+    await saveServerConfig(safeName, {
+      serverType: 'manual',
+      version: 'manual',
+      ramGB: settings.defaultRAM || 4,
+      status: 'STOPPED',
+      port,
+      displayName: safeName
+    });
+
+    return { success: true, serverName: safeName, path: serverPath, jarFile };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+}
+
 // Server process management
 const serverProcesses = new Map();
 // Track CPU usage over time for Windows (needed for accurate CPU percentage)
@@ -2466,6 +2541,132 @@ async function readServerFile(serverName, filePath) {
   }
 }
 
+// Gzip magic bytes (Minecraft .dat files are gzip-compressed NBT)
+const GZIP_MAGIC = Buffer.from([0x1f, 0x8b]);
+
+// Read server file as binary (returns base64 for IPC). Decompresses gzip for .dat so hex view shows NBT.
+async function readServerFileBinary(serverName, filePath) {
+  try {
+    const settings = await getAppSettings();
+    const serversDir = settings.serversDirectory || SERVERS_DIR;
+    const fullPath = path.join(serversDir, serverName, filePath);
+    
+    const normalizedPath = path.normalize(fullPath);
+    const normalizedServerDir = path.normalize(path.join(serversDir, serverName));
+    if (!normalizedPath.startsWith(normalizedServerDir)) {
+      return { success: false, error: 'Invalid file path' };
+    }
+    
+    let buf = await fs.readFile(fullPath);
+    let wasGzipped = false;
+    if (buf.length >= 2 && buf[0] === GZIP_MAGIC[0] && buf[1] === GZIP_MAGIC[1]) {
+      try {
+        buf = zlib.gunzipSync(buf);
+        wasGzipped = true;
+      } catch (e) {
+        // not valid gzip, keep raw
+      }
+    }
+    const contentBase64 = buf.toString('base64');
+    return { success: true, contentBase64, wasGzipped };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+}
+
+// Write server file from base64 (binary). If wasGzipped, compresses with gzip before writing.
+async function writeServerFileBinary(serverName, filePath, contentBase64, wasGzipped = false) {
+  try {
+    const settings = await getAppSettings();
+    const serversDir = settings.serversDirectory || SERVERS_DIR;
+    const fullPath = path.join(serversDir, serverName, filePath);
+    
+    const normalizedPath = path.normalize(fullPath);
+    const normalizedServerDir = path.normalize(path.join(serversDir, serverName));
+    if (!normalizedPath.startsWith(normalizedServerDir)) {
+      return { success: false, error: 'Invalid file path' };
+    }
+    
+    let buf = Buffer.from(contentBase64, 'base64');
+    if (wasGzipped) {
+      buf = zlib.gzipSync(buf, { level: 9 });
+    }
+    await fs.mkdir(path.dirname(fullPath), { recursive: true });
+    await fs.writeFile(fullPath, buf);
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+}
+
+// Make NBT structure JSON-serializable (BigInt -> [low, high] for long)
+function nbtToJsonSafe(tag) {
+  if (tag == null) return tag;
+  if (typeof tag === 'bigint') {
+    return [Number(BigInt.asIntN(32, tag >> 32n)), Number(BigInt.asIntN(32, tag))];
+  }
+  if (Array.isArray(tag)) {
+    return tag.map(nbtToJsonSafe);
+  }
+  if (typeof tag === 'object' && tag.type !== undefined) {
+    const out = { type: tag.type };
+    if (tag.name !== undefined) out.name = tag.name;
+    if (tag.value !== undefined) out.value = nbtToJsonSafe(tag.value);
+    return out;
+  }
+  if (typeof tag === 'object') {
+    const out = {};
+    for (const k of Object.keys(tag)) {
+      out[k] = nbtToJsonSafe(tag[k]);
+    }
+    return out;
+  }
+  return tag;
+}
+
+// Read server .dat as NBT (parsed tree for editor). Returns { success, parsed, type }.
+async function readServerFileNbt(serverName, filePath) {
+  if (!nbt) return { success: false, error: 'NBT library not available' };
+  try {
+    const settings = await getAppSettings();
+    const serversDir = settings.serversDirectory || SERVERS_DIR;
+    const fullPath = path.join(serversDir, serverName, filePath);
+    const normalizedPath = path.normalize(fullPath);
+    const normalizedServerDir = path.normalize(path.join(serversDir, serverName));
+    if (!normalizedPath.startsWith(normalizedServerDir)) {
+      return { success: false, error: 'Invalid file path' };
+    }
+    const buf = await fs.readFile(fullPath);
+    const { parsed, type } = await nbt.parse(buf);
+    const jsonSafe = nbtToJsonSafe(parsed);
+    return { success: true, parsed: jsonSafe, type };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+}
+
+// Write server .dat from NBT tree. Gzips for Minecraft .dat files.
+async function writeServerFileNbt(serverName, filePath, parsedJson, nbtFormat = 'big') {
+  if (!nbt) return { success: false, error: 'NBT library not available' };
+  try {
+    const settings = await getAppSettings();
+    const serversDir = settings.serversDirectory || SERVERS_DIR;
+    const fullPath = path.join(serversDir, serverName, filePath);
+    const normalizedPath = path.normalize(fullPath);
+    const normalizedServerDir = path.normalize(path.join(serversDir, serverName));
+    if (!normalizedPath.startsWith(normalizedServerDir)) {
+      return { success: false, error: 'Invalid file path' };
+    }
+    let buf = nbt.writeUncompressed(parsedJson, nbtFormat);
+    buf = zlib.gzipSync(buf, { level: 9 });
+    await fs.mkdir(path.dirname(fullPath), { recursive: true });
+    await fs.writeFile(fullPath, buf);
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+}
+
 // Write server file
 async function writeServerFile(serverName, filePath, content) {
   try {
@@ -2797,6 +2998,28 @@ async function listWorlds(serverName) {
   }
 }
 
+// Delete a world directory
+async function deleteWorld(serverName, worldName) {
+  try {
+    const settings = await getAppSettings();
+    const serversDir = settings.serversDirectory || SERVERS_DIR;
+    const worldPath = path.join(serversDir, serverName, worldName);
+
+    // Security: ensure path is inside server directory (no path traversal)
+    const serverPath = path.join(serversDir, serverName);
+    const normalizedWorld = path.normalize(worldPath);
+    const normalizedServer = path.normalize(serverPath);
+    if (!normalizedWorld.startsWith(normalizedServer) || normalizedWorld === normalizedServer) {
+      return { success: false, error: 'Invalid world path' };
+    }
+
+    await fs.rm(worldPath, { recursive: true });
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+}
+
 // Helper to get directory size
 async function getDirectorySize(dirPath) {
   let size = 0;
@@ -2909,6 +3132,7 @@ module.exports = {
   getBungeeCordVersions,
   getPurpurVersions,
   createServer,
+  importServer,
   startServer,
   stopServer,
   restartServer,
@@ -2920,13 +3144,18 @@ module.exports = {
   getPlayerCount,
   getServerFiles,
   readServerFile,
+  readServerFileBinary,
+  readServerFileNbt,
   writeServerFile,
+  writeServerFileBinary,
+  writeServerFileNbt,
   listPlugins,
   deletePlugin,
   checkJarSupportsPlugins,
   getModrinthPlugins,
   installModrinthPlugin,
   listWorlds,
+  deleteWorld,
   getServerProperties,
   updateServerProperties,
   deleteServer,
