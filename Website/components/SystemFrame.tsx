@@ -1,13 +1,18 @@
 "use client";
 
+import { useSession, signOut } from "next-auth/react";
+import Link from "next/link";
+
 export function SystemTopBar() {
+  const { data: session, status } = useSession();
+
   return (
     <div className="border-b border-border bg-background-secondary">
       <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-2 sm:px-6 lg:px-8">
         <div className="flex items-center gap-4">
-          <span className="text-sm font-medium text-text-primary">
+          <Link href="/" className="text-sm font-medium text-text-primary hover:text-accent transition-colors">
             Nodexity
-          </span>
+          </Link>
         </div>
         <nav className="flex items-center gap-6">
           <a
@@ -23,6 +28,12 @@ export function SystemTopBar() {
             Docs
           </a>
           <a
+            href="/support"
+            className="text-sm text-text-secondary hover:text-accent transition-colors"
+          >
+            Support
+          </a>
+          <a
             href="/status"
             className="text-sm text-text-secondary hover:text-accent transition-colors"
           >
@@ -34,6 +45,40 @@ export function SystemTopBar() {
           >
             Settings
           </a>
+          {status === "loading" ? (
+            <span className="text-sm text-text-muted">…</span>
+          ) : session ? (
+            <>
+              <Link
+                href="/profile"
+                className="text-sm text-text-secondary hover:text-accent transition-colors"
+              >
+                Profile
+              </Link>
+              <button
+                type="button"
+                onClick={() => signOut({ callbackUrl: "/" })}
+                className="text-sm text-text-secondary hover:text-accent transition-colors"
+              >
+                Log out
+              </button>
+            </>
+          ) : (
+            <>
+              <Link
+                href="/login"
+                className="text-sm text-text-secondary hover:text-accent transition-colors"
+              >
+                Log in
+              </Link>
+              <Link
+                href="/register"
+                className="text-sm text-accent hover:text-accent/80 transition-colors font-medium"
+              >
+                Sign up
+              </Link>
+            </>
+          )}
         </nav>
       </div>
     </div>
@@ -66,12 +111,22 @@ export function SystemFooter() {
               FAQ
             </a>
             <a
-              href="https://discord.gg/RVTAEbdDBJ"
-              target="_blank"
-              rel="noopener noreferrer"
+              href="/support"
               className="text-sm text-text-muted transition-colors hover:text-accent"
             >
               Support
+            </a>
+            <a
+              href="/login"
+              className="text-sm text-text-muted transition-colors hover:text-accent"
+            >
+              Log in
+            </a>
+            <a
+              href="/register"
+              className="text-sm text-text-muted transition-colors hover:text-accent"
+            >
+              Sign up
             </a>
             <a
               href="/donate"
