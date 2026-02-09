@@ -3,7 +3,7 @@ import { Inter } from "next/font/google";
 import "./globals.css";
 import { SystemTopBar, SystemFooter } from "@/components/SystemFrame";
 import { WebsiteSettingsProvider } from "@/components/WebsiteSettingsProvider";
-import { getCurrentUser } from "@/lib/supabase/server";
+import { BootCompleteProvider } from "@/components/BootCompleteContext";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -16,22 +16,22 @@ export const metadata: Metadata = {
   description: "Infrastructure management platform",
 };
 
-export default async function RootLayout({
+export default function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const currentUser = await getCurrentUser();
-
   return (
     <html lang="en" className={inter.variable}>
-      <body>
+      <body className="flex h-full flex-col overflow-hidden">
         <WebsiteSettingsProvider>
-          <div className="relative z-10 flex min-h-screen flex-col">
-            <SystemTopBar userRole={currentUser?.role} />
-            <main className="relative z-10 flex-1">{children}</main>
-            <SystemFooter />
-          </div>
+          <BootCompleteProvider>
+            <div className="relative z-10 flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden">
+              <SystemTopBar />
+              <main className="relative z-10 flex-1">{children}</main>
+              <SystemFooter />
+            </div>
+          </BootCompleteProvider>
         </WebsiteSettingsProvider>
       </body>
     </html>

@@ -1,4 +1,4 @@
-import type { UserRole } from "@/lib/supabase/server";
+type UserRole = "user" | "mod" | "admin" | "owner";
 
 const roleConfig: Record<UserRole, { label: string; className: string }> = {
   owner: { label: "Owner", className: "bg-amber-500/20 text-amber-400 border-amber-500/40" },

@@ -1,126 +1,39 @@
 import Link from "next/link";
-import { getCurrentUser } from "@/lib/supabase/server";
-import { supabase } from "@/lib/supabase";
-import { ensureCategories } from "@/lib/forum";
-import { NewThreadButton } from "./NewThreadButton";
-import { RoleBadge } from "@/components/RoleBadge";
-
-export const dynamic = "force-dynamic";
 
 export const metadata = {
   title: "Support | Nodexity",
-  description: "Forum-style support: categories, threads, and replies. Log in to post.",
+  description: "Get help and join the community on Discord",
 };
 
-type ThreadRow = {
-  id: string;
-  title: string;
-  updatedAt: string;
-  author: { name: string | null; email: string; role?: string } | null;
-};
+const DISCORD_URL = "https://discord.gg/RVTAEbdDBJ";
 
-type CategoryRow = {
-  id: string;
-  slug: string;
-  name: string;
-  description: string | null;
-  order: number;
-  threads: ThreadRow[];
-  _count: { threads: number };
-};
-
-export default async function SupportPage() {
-  await ensureCategories();
-  const user = await getCurrentUser();
-
-  const { data: categoriesRaw } = await supabase
-    .from("Category")
-    .select("id, slug, name, description, order, threads:Thread(id, title, updatedAt, author:User(name, email, role))")
-    .order("order", { ascending: true });
-
-  const allowedSlugs = ["server-manager", "general"];
-  const filtered = (categoriesRaw ?? []).filter((c: { slug: string }) => allowedSlugs.includes(c.slug));
-  const categories: CategoryRow[] = filtered.map((c) => {
-    const raw = c as Record<string, unknown>;
-    const threads = (raw.threads ?? raw.Thread ?? []) as ThreadRow[];
-    const sorted = [...threads].sort(
-      (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
-    );
-    return {
-      ...c,
-      threads: sorted,
-      _count: { threads: threads.length },
-    };
-  });
-
+export default function SupportPage() {
   return (
-    <>
-      <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-semibold text-text-primary font-mono sm:text-2xl">
-            Support
-          </h1>
-          <p className="mt-0.5 text-sm text-text-muted">
-            Pick a category on the left or browse below. Log in to create threads and reply.
-          </p>
-        </div>
-        {user && (
-          <NewThreadButton categories={categories.map((c) => ({ id: c.id, slug: c.slug, name: c.name }))} />
-        )}
-      </div>
-
-      <div className="space-y-6">
-        {categories.map((cat) => (
-          <div key={cat.id}>
-            <Link
-              href={`/support/category/${cat.slug}`}
-              className="mb-2 flex items-center gap-2 text-sm font-medium text-accent hover:underline"
-            >
-              # {cat.name}
-              <span className="text-text-muted font-normal">({cat._count.threads})</span>
-            </Link>
-            <div className="rounded-lg border border-border bg-background-secondary/40 overflow-hidden">
-              {cat.threads.length === 0 ? (
-                <p className="px-4 py-3 text-sm text-text-muted">No threads yet</p>
-              ) : (
-                <ul className="divide-y divide-border">
-                  {cat.threads.slice(0, 5).map((t) => (
-                    <li key={t.id}>
-                      <Link
-                        href={`/support/thread/${t.id}`}
-                        className="flex items-center justify-between gap-3 px-4 py-2.5 text-sm transition-colors hover:bg-background-secondary/60"
-                      >
-                        <span className="min-w-0 truncate text-text-primary">{t.title}</span>
-                        <span className="shrink-0 text-xs text-text-muted">
-                          {t.author?.name || t.author?.email}
-                          <RoleBadge role={t.author?.role as "user" | "mod" | "admin" | "owner" | undefined} size="sm" />
-                        </span>
-                      </Link>
-                    </li>
-                  ))}
-                </ul>
-              )}
-              {cat.threads.length > 5 && (
-                <Link
-                  href={`/support/category/${cat.slug}`}
-                  className="block border-t border-border px-4 py-2 text-center text-xs text-text-muted hover:bg-background-secondary/60 hover:text-accent"
-                >
-                  View all {cat._count.threads} threads →
-                </Link>
-              )}
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {!user && (
-        <p className="mt-6 rounded-lg border border-border bg-background-secondary/50 px-4 py-3 text-sm text-text-secondary">
-          <Link href="/login?callbackUrl=/support" className="text-accent hover:underline">Log in</Link>
-          {" or "}
-          <Link href="/register" className="text-accent hover:underline">sign up</Link>
-          {" to create threads and reply."}
+    <section className="full-width-section relative min-h-[50vh]">
+      <div className="section-content mx-auto max-w-xl px-4 py-24 sm:px-6 lg:py-32 text-center">
+        <h1 className="text-3xl font-semibold tracking-tight text-text-primary sm:text-4xl font-mono">
+          SUPPORT
+        </h1>
+        <p className="mt-4 text-text-secondary">
+          Get help, ask questions, and join the community on Discord. No extra accounts—just use Discord.
         </p>
-      )}
-    </>
+        <div className="mt-8 flex flex-col sm:flex-row gap-4 justify-center">
+          <a
+            href={DISCORD_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="btn-primary inline-flex items-center justify-center"
+          >
+            <span className="relative z-20 font-mono">JOIN DISCORD</span>
+          </a>
+          <Link href="/faq" className="btn-secondary inline-flex items-center justify-center">
+            <span className="relative z-20 font-mono">FAQ</span>
+          </Link>
+        </div>
+        <p className="mt-8 text-sm text-text-muted">
+          <Link href="/" className="text-accent hover:underline">← Back home</Link>
+        </p>
+      </div>
+    </section>
   );
 }

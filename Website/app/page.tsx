@@ -6,6 +6,7 @@ import Link from "next/link";
 import BootSequence from "@/components/BootSequence";
 import NodexityTyping from "@/components/NodexityTyping";
 import { useWebsiteSettings } from "@/components/WebsiteSettingsProvider";
+import { useBootComplete } from "@/components/BootCompleteContext";
 
 // Hook to track scroll direction
 function useScrollDirection() {
@@ -194,11 +195,17 @@ export default function Home() {
   const heroRef = useRef(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const { settings } = useWebsiteSettings();
+  const { setBootComplete: setGlobalBootComplete } = useBootComplete();
   const [bootComplete, setBootComplete] = useState(!settings.showBootSequence);
 
   useEffect(() => {
     if (!settings.showBootSequence) setBootComplete(true);
   }, [settings.showBootSequence]);
+
+  const handleBootComplete = () => {
+    setBootComplete(true);
+    setGlobalBootComplete(true);
+  };
 
   const scrollDirection = useScrollDirection();
 
@@ -227,7 +234,7 @@ export default function Home() {
   return (
     <div ref={containerRef} className="relative flex flex-col">
       {settings.showBootSequence && (
-        <BootSequence onComplete={() => setBootComplete(true)} />
+        <BootSequence onComplete={handleBootComplete} />
       )}
 
       {/* Development Notice Banner */}

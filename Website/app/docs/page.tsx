@@ -21,8 +21,7 @@ export default function DocsPage() {
             </h2>
             <ul className="mt-2 list-inside list-disc space-y-1 leading-relaxed">
               <li><span className="text-text-primary">Server Manager (desktop app)</span> — Create and manage Minecraft servers locally (Electron + React).</li>
-              <li><span className="text-text-primary">This website</span> — Account, support forum, docs, and settings. Auth and data via Supabase.</li>
-              <li><span className="text-text-primary">Support forum</span> — Categories, threads, and replies. Log in to post; use the Support link in the nav.</li>
+              <li><span className="text-text-primary">This website</span> — Docs, support (via Discord), and settings. No account required.</li>
             </ul>
           </section>
 
@@ -64,8 +63,8 @@ npm run dev`}
             </h2>
             <ul className="mt-2 space-y-2 leading-relaxed">
               <li>
-                <Link href="/support" className="text-accent hover:underline">Support forum</Link>
-                {" — Post questions, bugs, or ideas. Log in to create threads."}
+                <Link href="/support" className="text-accent hover:underline">Support</Link>
+                {" — Get help and join the community on Discord (no extra account)."}
               </li>
               <li>
                 <a href="https://discord.gg/RVTAEbdDBJ" target="_blank" rel="noopener noreferrer" className="text-accent hover:underline">Discord</a>
@@ -101,7 +100,7 @@ npm run dev`}
 
         <div className="mt-10 flex flex-wrap gap-4">
           <Link href="/support" className="btn-primary">
-            <span className="relative z-20 font-mono">SUPPORT FORUM</span>
+            <span className="relative z-20 font-mono">SUPPORT</span>
           </Link>
           <a href="https://discord.gg/RVTAEbdDBJ" target="_blank" rel="noopener noreferrer" className="btn-discord">
             <span className="relative z-20 font-mono">DISCORD</span>
