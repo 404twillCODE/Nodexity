@@ -17,10 +17,10 @@ export default function SettingsPage() {
         className="mb-8"
       >
         <h1 className="font-mono text-3xl font-semibold tracking-tight text-text-primary sm:text-4xl">
-          SETTINGS
+          WEBSITE SETTINGS
         </h1>
         <p className="mt-2 font-mono text-sm text-text-secondary">
-          Configure website preferences. Stored in your browser.
+          Configure website preferences (e.g. boot sequence, banners). Stored in your browser.
         </p>
       </motion.div>
 

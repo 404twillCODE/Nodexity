@@ -1,8 +1,8 @@
 import { redirect } from "next/navigation";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
+import { getSession } from "@/lib/supabase/server";
+import { supabase } from "@/lib/supabase";
 import Link from "next/link";
+import { RoleBadge } from "@/components/RoleBadge";
 
 export const dynamic = "force-dynamic";
 
@@ -12,25 +12,40 @@ export const metadata = {
 };
 
 export default async function ProfilePage() {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.email) {
+  const session = await getSession();
+  if (!session?.user?.id) {
     redirect("/login?callbackUrl=/profile");
   }
 
-  const user = await prisma.user.findUnique({
-    where: { email: session.user.email },
-    select: { id: true, name: true, email: true, image: true, createdAt: true },
-  });
+  const { data: user } = await supabase
+    .from("User")
+    .select("id, name, email, image, role, createdAt")
+    .eq("id", session.user.id)
+    .single();
   if (!user) redirect("/login");
 
-  const myThreads = await prisma.thread.findMany({
-    where: { authorId: user.id },
-    orderBy: { updatedAt: "desc" },
-    take: 20,
-    include: {
-      category: { select: { slug: true, name: true } },
-      _count: { select: { replies: true } },
-    },
+  const { data: myThreads } = await supabase
+    .from("Thread")
+    .select(`
+      id,
+      title,
+      updatedAt,
+      category:Category(slug, name),
+      replies:Reply(id)
+    `)
+    .eq("authorId", user.id)
+    .order("updatedAt", { ascending: false })
+    .limit(20);
+
+  const threads = (myThreads ?? []).map((t) => {
+    const raw = t as Record<string, unknown>;
+    const repliesArr = raw.replies ?? raw.Reply;
+    const categoryData = (t.category ?? raw.Category) as { slug: string; name: string } | null;
+    return {
+      ...t,
+      category: categoryData,
+      _count: { replies: Array.isArray(repliesArr) ? repliesArr.length : 0 },
+    };
   });
 
   return (
@@ -40,20 +55,21 @@ export default async function ProfilePage() {
           <h1 className="text-3xl font-semibold tracking-tight text-text-primary sm:text-4xl lg:text-5xl font-mono">
             PROFILE
           </h1>
-          <p className="mt-2 text-text-secondary">
+          <p className="mt-2 flex flex-wrap items-center gap-2 text-text-secondary">
             {user.name || user.email}
             {user.name && <span className="text-text-muted"> · {user.email}</span>}
+            <RoleBadge role={user.role} size="md" />
           </p>
         </div>
 
         <div className="space-y-8 border-t border-border pt-8">
           <div>
             <h2 className="mb-3 text-lg font-semibold text-text-primary">My threads</h2>
-            {myThreads.length === 0 ? (
-              <p className="text-sm text-text-muted">You haven’t started any support threads yet.</p>
+            {threads.length === 0 ? (
+              <p className="text-sm text-text-muted">You haven't started any support threads yet.</p>
             ) : (
               <ul className="space-y-2">
-                {myThreads.map((t) => (
+                {threads.map((t) => (
                   <li key={t.id}>
                     <Link
                       href={`/support/thread/${t.id}`}
@@ -61,7 +77,7 @@ export default async function ProfilePage() {
                     >
                       <span className="font-medium">{t.title}</span>
                       <span className="ml-2 text-xs text-text-muted">
-                        {t.category.name} · {t._count.replies} replies
+                        {t.category?.name} · {t._count.replies} replies
                       </span>
                     </Link>
                   </li>
@@ -77,6 +93,9 @@ export default async function ProfilePage() {
         </div>
 
         <div className="mt-10 flex flex-wrap gap-4 border-t border-border pt-8">
+          <Link href="/profile/settings" className="btn-secondary">
+            <span className="relative z-20 font-mono">PROFILE SETTINGS</span>
+          </Link>
           <Link href="/support" className="btn-secondary">
             <span className="relative z-20 font-mono">SUPPORT</span>
           </Link>

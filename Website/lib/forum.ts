@@ -1,14 +1,12 @@
-import { prisma } from "./prisma";
+import { supabase } from "./supabase";
 
 const DEFAULT_CATEGORIES = [
   { slug: "server-manager", name: "Server Manager", description: "Desktop app, setup, and usage", order: 1 },
-  { slug: "launcher", name: "Launcher", description: "Launcher and game clients", order: 2 },
-  { slug: "hosting", name: "Hosting", description: "Recycle and premium hosting", order: 3 },
-  { slug: "general", name: "General", description: "General questions and feedback", order: 4 },
+  { slug: "general", name: "General", description: "General questions and feedback", order: 2 },
 ];
 
 export async function ensureCategories() {
-  const count = await prisma.category.count();
-  if (count > 0) return;
-  await prisma.category.createMany({ data: DEFAULT_CATEGORIES });
+  const { count } = await supabase.from("Category").select("*", { count: "exact", head: true });
+  if (count != null && count > 0) return;
+  await supabase.from("Category").insert(DEFAULT_CATEGORIES);
 }

@@ -4,7 +4,7 @@ const basePath = isProduction ? '/Nodexity' : '';
 
 const nextConfig = {
   reactStrictMode: true,
-  // No output: 'export' — auth API and forum need a Node server (dynamic routes, getServerSession)
+  // No output: 'export' — forum and auth need a Node server (dynamic routes, Supabase)
   images: {
     unoptimized: true,
   },

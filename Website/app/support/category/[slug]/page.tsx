@@ -1,18 +1,30 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
+import { getSession } from "@/lib/supabase/server";
+import { supabase } from "@/lib/supabase";
 import { ensureCategories } from "@/lib/forum";
 import { NewThreadButton } from "../../NewThreadButton";
+import { RoleBadge } from "@/components/RoleBadge";
 
 export const dynamic = "force-dynamic";
 
 type Props = { params: { slug: string } };
 
+type ThreadRow = {
+  id: string;
+  title: string;
+  updatedAt: string;
+  author: { id: string; name: string | null; email: string; role?: string } | null;
+  replies: unknown[];
+};
+
 export async function generateMetadata({ params }: Props) {
   const { slug } = params;
-  const category = await prisma.category.findUnique({ where: { slug } });
+  const { data: category } = await supabase
+    .from("Category")
+    .select("name, description")
+    .eq("slug", slug)
+    .single();
   if (!category) return { title: "Support | Nodexity" };
   return {
     title: `${category.name} | Support | Nodexity`,
@@ -20,82 +32,92 @@ export async function generateMetadata({ params }: Props) {
   };
 }
 
+const ALLOWED_CATEGORY_SLUGS = ["server-manager", "general"];
+
 export default async function CategoryPage({ params }: Props) {
   await ensureCategories();
   const { slug } = params;
-  const session = await getServerSession(authOptions);
+  if (!ALLOWED_CATEGORY_SLUGS.includes(slug)) notFound();
+  const session = await getSession();
 
-  const category = await prisma.category.findUnique({
-    where: { slug },
-    include: {
-      threads: {
-        orderBy: { updatedAt: "desc" },
-        include: {
-          author: { select: { id: true, name: true, email: true } },
-          _count: { select: { replies: true } },
-        },
-      },
-    },
-  });
+  const { data: category, error } = await supabase
+    .from("Category")
+    .select(`
+      id,
+      slug,
+      name,
+      description,
+      threads:Thread(
+        id,
+        title,
+        updatedAt,
+        author:User(id, name, email, role),
+        replies:Reply(id)
+      )
+    `)
+    .eq("slug", slug)
+    .single();
 
-  if (!category) notFound();
+  if (error || !category) notFound();
 
-  const categories = await prisma.category.findMany({
-    orderBy: { order: "asc" },
-    select: { id: true, slug: true, name: true },
-  });
+  const rawCat = category as Record<string, unknown>;
+  const threads = (rawCat.threads ?? rawCat.Thread ?? []) as ThreadRow[];
+  const sortedThreads = [...threads].sort(
+    (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+  );
+
+  const { data: categoriesList } = await supabase
+    .from("Category")
+    .select("id, slug, name")
+    .order("order", { ascending: true });
+
+  const categories = categoriesList ?? [];
 
   return (
-    <section className="full-width-section relative">
-      <div className="section-content mx-auto w-full max-w-4xl px-4 py-24 sm:px-6 lg:px-8 lg:py-32">
-        <div className="mb-10 flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <Link href="/support" className="text-sm text-text-muted hover:text-accent mb-2 inline-block">
-              ← Support
-            </Link>
-            <h1 className="text-3xl font-semibold tracking-tight text-text-primary sm:text-4xl font-mono">
-              {category.name}
-            </h1>
-            {category.description && (
-              <p className="mt-2 text-text-secondary">{category.description}</p>
-            )}
-          </div>
-          {session && (
-            <NewThreadButton categories={categories} />
+    <>
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h1 className="text-xl font-semibold text-text-primary font-mono sm:text-2xl">
+            # {category.name}
+          </h1>
+          {category.description && (
+            <p className="mt-0.5 text-sm text-text-muted">{category.description}</p>
           )}
         </div>
-
-        <div className="space-y-2 border-t border-border pt-8">
-          {category.threads.length === 0 ? (
-            <p className="py-8 text-center text-text-muted">No threads yet. Be the first to post.</p>
-          ) : (
-            category.threads.map((t) => (
-              <Link
-                key={t.id}
-                href={`/support/thread/${t.id}`}
-                className="block rounded border border-border bg-background-secondary/50 px-4 py-3 transition-colors hover:border-accent/30 hover:bg-background-secondary"
-              >
-                <div className="flex items-center justify-between gap-4">
-                  <span className="font-medium text-text-primary">{t.title}</span>
-                  <span className="text-sm text-text-muted shrink-0">{t._count.replies} replies</span>
-                </div>
-                <p className="mt-1 text-xs text-text-muted">
-                  by {t.author.name || t.author.email} · {new Date(t.updatedAt).toLocaleDateString()}
-                </p>
-              </Link>
-            ))
-          )}
-        </div>
-
-        <div className="mt-10 flex flex-wrap gap-4 border-t border-border pt-8">
-          <Link href="/support" className="btn-secondary">
-            <span className="relative z-20 font-mono">ALL CATEGORIES</span>
-          </Link>
-          <Link href="/" className="btn-secondary">
-            <span className="relative z-20 font-mono">HOME</span>
-          </Link>
-        </div>
+        {session && (
+          <NewThreadButton categories={categories} />
+        )}
       </div>
-    </section>
+
+      <div className="rounded-lg border border-border bg-background-secondary/40 overflow-hidden">
+        {sortedThreads.length === 0 ? (
+          <p className="px-4 py-8 text-center text-sm text-text-muted">No threads yet. Be the first to post.</p>
+        ) : (
+          <ul className="divide-y divide-border">
+            {sortedThreads.map((t) => (
+              <li key={t.id}>
+                <Link
+                  href={`/support/thread/${t.id}`}
+                  className="flex items-center gap-4 px-4 py-3 transition-colors hover:bg-background-secondary/60"
+                >
+                  <div className="min-w-0 flex-1">
+                    <span className="font-medium text-text-primary">{t.title}</span>
+                    <p className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs text-text-muted">
+                      {t.author?.name || t.author?.email}
+                      <RoleBadge role={t.author?.role as "user" | "mod" | "admin" | "owner" | undefined} size="sm" />
+                      <span>·</span>
+                      <span>{new Date(t.updatedAt).toLocaleDateString()}</span>
+                      <span>·</span>
+                      <span>{Array.isArray(t.replies) ? t.replies.length : 0} replies</span>
+                    </p>
+                  </div>
+                  <span className="shrink-0 text-text-muted">→</span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </>
   );
 }
