@@ -4,7 +4,7 @@ import ToggleSwitch from "./ToggleSwitch";
 import { useToast } from "./ToastProvider";
 
 export default function SettingsView() {
-  const [activeTab, setActiveTab] = useState<'general' | 'server' | 'console' | 'dev'>('general');
+  const [activeTab, setActiveTab] = useState<'general' | 'server' | 'console' | 'dev' | 'about'>('general');
   const [settings, setSettings] = useState<import("../hooks/useServerManager").AppSettings | null>(null);
   const [loading, setLoading] = useState(true);
   const [devMode, setDevMode] = useState(false);
@@ -182,7 +182,7 @@ export default function SettingsView() {
 
       {/* Tabs */}
       <div className="flex gap-2 mb-6 border-b border-border">
-        {(['general', 'server', 'console', 'dev'] as const).map((tab) => (
+        {(['general', 'server', 'console', 'dev', 'about'] as const).map((tab) => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
@@ -192,7 +192,7 @@ export default function SettingsView() {
                 : 'text-text-secondary border-transparent hover:text-text-primary'
             }`}
           >
-            {tab === 'general' ? 'GENERAL' : tab === 'server' ? 'SERVER' : tab === 'console' ? 'CONSOLE' : 'DEV'}
+            {tab === 'general' ? 'GENERAL' : tab === 'server' ? 'SERVER' : tab === 'console' ? 'CONSOLE' : tab === 'dev' ? 'DEV' : 'ABOUT'}
           </button>
         ))}
       </div>
@@ -604,6 +604,62 @@ export default function SettingsView() {
               </div>
             </motion.div>
           </>
+        )}
+
+        {/* About & Licenses */}
+        {activeTab === 'about' && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.1, type: "spring", stiffness: 100, damping: 15 }}
+            className="system-card p-6"
+          >
+            <h2 className="text-lg font-semibold text-text-primary font-mono mb-4">
+              About Nodexity
+            </h2>
+            <p className="text-sm text-text-secondary font-mono mb-4">
+              Nodexity is a local-first Minecraft server manager. Version 0.1.0.
+            </p>
+            <h3 className="text-sm font-semibold text-text-primary font-mono uppercase tracking-wider mb-3">
+              Third-party licenses
+            </h3>
+            <p className="text-xs text-text-muted font-mono mb-4">
+              This application uses the following open-source software. Please see each project for full license text.
+            </p>
+            <div className="space-y-4 text-sm font-mono">
+              <div className="border border-border rounded-lg p-4 bg-background-secondary">
+                <div className="font-semibold text-text-primary mb-1">playit-agent</div>
+                <p className="text-text-secondary text-xs mb-2">
+                  The playit.gg agent is used to provide optional external access tunneling. It is downloaded on demand when you enable &quot;External Access&quot; for a server.
+                </p>
+                <a
+                  href="https://github.com/playit-cloud/playit-agent"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-accent hover:underline text-xs"
+                >
+                  GitHub: playit-cloud/playit-agent
+                </a>
+                <p className="text-text-muted text-xs mt-2">
+                  Licensed under the Apache License 2.0 (or as stated in the repository). Not affiliated with Nodexity.
+                </p>
+              </div>
+              <div className="border border-border rounded-lg p-4 bg-background-secondary">
+                <div className="font-semibold text-text-primary mb-1">Modrinth</div>
+                <p className="text-text-secondary text-xs mb-2">
+                  Plugin discovery and installation uses the Modrinth API.
+                </p>
+                <a
+                  href="https://modrinth.com"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-accent hover:underline text-xs"
+                >
+                  modrinth.com
+                </a>
+              </div>
+            </div>
+          </motion.div>
         )}
       </div>
     </div>

@@ -7,6 +7,7 @@ import BootSequence from "@/components/BootSequence";
 import NodexityTyping from "@/components/NodexityTyping";
 import { useWebsiteSettings } from "@/components/WebsiteSettingsProvider";
 import { useBootComplete } from "@/components/BootCompleteContext";
+import DonateBeforeDownloadModal, { GITHUB_RELEASES_URL } from "@/components/DonateBeforeDownloadModal";
 
 // Hook to track scroll direction
 function useScrollDirection() {
@@ -197,6 +198,7 @@ export default function Home() {
   const { settings } = useWebsiteSettings();
   const { setBootComplete: setGlobalBootComplete } = useBootComplete();
   const [bootComplete, setBootComplete] = useState(!settings.showBootSequence);
+  const [donateModalOpen, setDonateModalOpen] = useState(false);
 
   useEffect(() => {
     if (!settings.showBootSequence) setBootComplete(true);
@@ -236,6 +238,11 @@ export default function Home() {
       {settings.showBootSequence && (
         <BootSequence onComplete={handleBootComplete} />
       )}
+      <DonateBeforeDownloadModal
+        open={donateModalOpen}
+        onClose={() => setDonateModalOpen(false)}
+        onContinueToDownload={() => window.open(GITHUB_RELEASES_URL, "_blank", "noopener,noreferrer")}
+      />
 
       {/* Hero Section */}
       <section
@@ -496,16 +503,15 @@ export default function Home() {
               >
                 <div className="flex flex-col items-start gap-3">
                   <div className="flex items-center gap-4">
-                    <motion.a
-                      href="https://github.com/404twillCODE/Nodexity/releases/latest"
-                      target="_blank"
-                      rel="noopener noreferrer"
+                    <motion.button
+                      type="button"
+                      onClick={() => setDonateModalOpen(true)}
                       className="btn-primary relative"
                       whileHover={{ scale: 1.02 }}
                       whileTap={{ scale: 0.98 }}
                     >
                       <span className="relative z-20 font-mono">DOWNLOAD</span>
-                    </motion.a>
+                    </motion.button>
                     <Link
                       href="/software"
                       className="btn-secondary"

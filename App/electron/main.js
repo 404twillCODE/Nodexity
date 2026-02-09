@@ -7,6 +7,7 @@ const isDev = !app.isPackaged || process.env.NODE_ENV === 'development';
 // Clear module cache and reload serverManager to ensure latest functions are available
 delete require.cache[require.resolve('./serverManager')];
 const serverManager = require('./serverManager');
+const playitManager = require('./playitManager');
 
 // Verify required serverManager functions are available (for debugging)
 if (!serverManager.checkJarSupportsPlugins) {
@@ -603,6 +604,65 @@ ipcMain.handle('get-servers-disk-usage', async () => {
   return await serverManager.getServersDiskUsage();
 });
 
+// Playit.gg tunneling
+ipcMain.handle('playit-ensure-installed', async (event, onProgressCallback) => {
+  try {
+    const progressCb = typeof onProgressCallback === 'function' ? onProgressCallback : null;
+    return await playitManager.ensurePlayitAgentInstalled(progressCb);
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('playit-start', async (event, serverName, options) => {
+  try {
+    return await playitManager.startPlayit(serverName, options || {}, mainWindow);
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('playit-stop', async (event, serverName) => {
+  try {
+    return playitManager.stopPlayit(serverName);
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('playit-restart', async (event, serverName) => {
+  try {
+    return await playitManager.restartPlayit(serverName, mainWindow);
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('playit-status', async (event, serverName) => {
+  try {
+    return playitManager.getPlayitStatus(serverName);
+  } catch (error) {
+    return { running: false, connected: false, publicAddress: null, lastError: error.message };
+  }
+});
+
+ipcMain.handle('playit-set-secret', async (event, serverName, secret) => {
+  try {
+    await playitManager.setStoredSecret(serverName, secret || '');
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('playit-has-secret', async (event, serverName) => {
+  try {
+    return { hasSecret: await playitManager.hasPlayitSecret(serverName) };
+  } catch (error) {
+    return { hasSecret: false };
+  }
+});
+
 app.whenReady().then(() => {
   createWindow();
   serverManager.getAppSettings().then((settings) => {
@@ -618,14 +678,18 @@ app.whenReady().then(() => {
   });
 });
 
-// Stop all servers before quitting
+// Stop all servers and playit agents before quitting
 async function stopAllServers() {
   try {
     const servers = await serverManager.listServers();
     const stopPromises = servers
       .filter(server => server.status === 'RUNNING' || server.status === 'STARTING')
       .map(server => serverManager.stopServer(server.id));
-    
+
+    if (playitManager && typeof playitManager.stopAllPlayit === 'function') {
+      playitManager.stopAllPlayit();
+    }
+
     // Stop all servers in parallel and wait for completion
     await Promise.allSettled(stopPromises);
   } catch (error) {

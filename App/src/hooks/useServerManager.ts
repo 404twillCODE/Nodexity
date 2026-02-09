@@ -101,6 +101,16 @@ declare global {
         onAppSettingsUpdated: (callback: (data: AppSettings) => void) => () => void;
         onUpdateAvailable: (callback: (data: { version: string; url: string }) => void) => () => void;
       };
+      playit?: {
+        ensureInstalled: () => Promise<{ success: boolean; path?: string; alreadyInstalled?: boolean; error?: string }>;
+        start: (serverName: string, options?: Record<string, unknown>) => Promise<{ success: boolean; error?: string }>;
+        stop: (serverName: string) => Promise<{ success: boolean; wasRunning?: boolean; error?: string }>;
+        restart: (serverName: string) => Promise<{ success: boolean; error?: string }>;
+        getStatus: (serverName: string) => Promise<{ running: boolean; connected: boolean; publicAddress: string | null; lastError: string | null; claimUrl?: string | null }>;
+        setSecret: (serverName: string, secret: string) => Promise<{ success: boolean; error?: string }>;
+        hasSecret: (serverName: string) => Promise<{ hasSecret: boolean }>;
+        onLog: (callback: (serverName: string, line: string, type: string) => void) => () => void;
+      };
     };
   }
 }

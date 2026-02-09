@@ -8,6 +8,7 @@ import FileEditor from "./FileEditor";
 import PluginManager from "./PluginManager";
 import WorldManager from "./WorldManager";
 import ServerPropertiesEditor from "./ServerPropertiesEditor";
+import PlayitManager from "./PlayitManager";
 import { lineHasServerTimestamp } from "../utils/consoleUtils";
 
 interface ServerDetailViewProps {
@@ -15,7 +16,7 @@ interface ServerDetailViewProps {
   onBack: () => void;
 }
 
-type Tab = "dashboard" | "console" | "files" | "plugins" | "worlds" | "properties" | "settings";
+type Tab = "dashboard" | "console" | "files" | "plugins" | "worlds" | "properties" | "playit" | "settings";
 
 interface ConsoleLine {
   id: string;
@@ -809,7 +810,7 @@ export default function ServerDetailView({ serverName, onBack }: ServerDetailVie
 
       {/* Tabs */}
       <div className="flex gap-2 px-4 sm:px-6 pt-3 sm:pt-4 border-b border-border bg-background-secondary overflow-x-auto min-w-0 shrink-0">
-        {(['dashboard', 'console', 'files', 'plugins', 'worlds', 'properties', 'settings'] as Tab[])
+        {(['dashboard', 'console', 'files', 'plugins', 'worlds', 'properties', 'playit', 'settings'] as Tab[])
           .filter(tab => {
             if (tab === 'plugins' && supportsPlugins === false) return false;
             return true;
@@ -829,7 +830,8 @@ export default function ServerDetailView({ serverName, onBack }: ServerDetailVie
              tab === 'files' ? 'FILES' :
              tab === 'plugins' ? 'PLUGINS' :
              tab === 'worlds' ? 'WORLDS' :
-             tab === 'properties' ? 'PROPERTIES' : 'SETTINGS'}
+             tab === 'properties' ? 'PROPERTIES' :
+             tab === 'playit' ? 'EXTERNAL ACCESS' : 'SETTINGS'}
           </button>
         ))}
       </div>
@@ -1191,6 +1193,10 @@ export default function ServerDetailView({ serverName, onBack }: ServerDetailVie
               </form>
             </div>
           </div>
+        )}
+
+        {activeTab === "playit" && (
+          <PlayitManager serverName={serverName} />
         )}
 
         {activeTab === "settings" && (

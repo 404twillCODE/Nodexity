@@ -1,8 +1,9 @@
 "use client";
 
 import { motion, useInView } from "framer-motion";
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import Link from "next/link";
+import DonateBeforeDownloadModal, { GITHUB_RELEASES_URL } from "@/components/DonateBeforeDownloadModal";
 
 const features = [
   {
@@ -230,9 +231,15 @@ function ImagePlaceholder({ placeholder, index }: { placeholder: typeof imagePla
 export default function SoftwarePage() {
   const heroImageRef = useRef(null);
   const heroImageInView = useInView(heroImageRef, { once: true, margin: "-100px" });
+  const [donateModalOpen, setDonateModalOpen] = useState(false);
 
   return (
     <div className="mx-auto w-full max-w-7xl px-4 py-24 sm:px-6 lg:px-8 lg:py-32">
+      <DonateBeforeDownloadModal
+        open={donateModalOpen}
+        onClose={() => setDonateModalOpen(false)}
+        onContinueToDownload={() => window.open(GITHUB_RELEASES_URL, "_blank", "noopener,noreferrer")}
+      />
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -268,16 +275,15 @@ export default function SoftwarePage() {
           control. All data stored locally on host machine.
         </p>
         <div className="flex flex-wrap items-center gap-4">
-          <motion.a
-            href="https://github.com/404twillCODE/Nodexity/releases/latest"
-            target="_blank"
-            rel="noopener noreferrer"
+          <motion.button
+            type="button"
+            onClick={() => setDonateModalOpen(true)}
             className="inline-flex items-center gap-2 rounded-lg border border-accent bg-accent/10 px-6 py-3 text-sm font-mono uppercase tracking-wider text-accent transition-colors hover:bg-accent/20 hover:border-accent/80"
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
           >
             Download for Windows
-          </motion.a>
+          </motion.button>
           <span className="text-xs font-mono uppercase tracking-wider text-text-muted">
             Early access · .exe on GitHub
           </span>
