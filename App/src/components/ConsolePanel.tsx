@@ -34,7 +34,9 @@ export default function ConsolePanel({ selectedServer: propSelectedServer }: Con
   const lastScrollTopRef = useRef<number>(0);
   const userScrolledRef = useRef<boolean>(false);
   const logBufferRef = useRef<string>("");
-  
+  const pendingLinesRef = useRef<ConsoleLine[]>([]);
+  const flushRafRef = useRef<number | null>(null);
+
   // Use prop if provided, otherwise use internal state
   const selectedServer = propSelectedServer !== undefined ? propSelectedServer : internalSelectedServer;
 
@@ -98,37 +100,48 @@ export default function ConsolePanel({ selectedServer: propSelectedServer }: Con
   useEffect(() => {
     if (!window.electronAPI) return;
 
+    const maxLines = settings?.maxConsoleLines || 1000;
+
+    const flushPendingLines = () => {
+      flushRafRef.current = null;
+      if (pendingLinesRef.current.length === 0) return;
+      const toAdd = pendingLinesRef.current;
+      pendingLinesRef.current = [];
+      setLines(prev => {
+        const merged = [...prev, ...toAdd];
+        return merged.slice(-maxLines);
+      });
+    };
+
     const handleLog = (data: { serverName: string; type: 'stdout' | 'stderr'; data: string }) => {
-      if (data.serverName === selectedServer) {
-        const buffered = logBufferRef.current + data.data;
-        const parts = buffered.split('\n');
-        logBufferRef.current = parts.pop() ?? "";
+      if (data.serverName !== selectedServer) return;
+      const buffered = logBufferRef.current + data.data;
+      const parts = buffered.split('\n');
+      logBufferRef.current = parts.pop() ?? "";
+      if (parts.length === 0) return;
 
-        if (parts.length === 0) return;
+      const timestamp = new Date().toLocaleTimeString();
+      const newLines = parts
+        .filter((line) => line.trim() !== "")
+        .map((line, index) => ({
+          id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${index}`,
+          text: line.trim(),
+          timestamp,
+          type: data.type,
+        }));
+      if (newLines.length === 0) return;
 
-        const timestamp = new Date().toLocaleTimeString();
-        const newLines = parts
-          .filter((line) => line.trim() !== "")
-          .map((line, index) => ({
-            id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${index}`,
-            text: line.trim(),
-            timestamp,
-            type: data.type,
-          }));
-
-        if (newLines.length === 0) return;
-
-        setLines(prev => {
-          const maxLines = settings?.maxConsoleLines || 1000;
-          const merged = [...prev, ...newLines];
-          return merged.slice(-maxLines);
-        });
+      pendingLinesRef.current.push(...newLines);
+      if (flushRafRef.current === null) {
+        flushRafRef.current = requestAnimationFrame(flushPendingLines);
       }
     };
 
     window.electronAPI.server.onServerLog(handleLog);
 
     return () => {
+      if (flushRafRef.current !== null) cancelAnimationFrame(flushRafRef.current);
+      flushRafRef.current = null;
       window.electronAPI?.server.removeServerLogListener();
     };
   }, [selectedServer, settings]);

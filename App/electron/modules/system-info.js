@@ -260,7 +260,7 @@ async function getSystemInfo() {
 
 // Cache for server usage to reduce stuttering
 const serverUsageCache = new Map(); // Map<serverName, { usage, timestamp }>
-const USAGE_REFRESH_INTERVAL = 2000;
+const USAGE_REFRESH_INTERVAL = 3000; // 3s to reduce CPU when multiple servers run
 let aggregateUsageCache = { totalCPU: 0, totalRAM: 0, totalRAMMB: 0, serverUsages: {}, timestamp: 0 };
 let usageRefreshTimer = null;
 let usageRefreshInFlight = false;

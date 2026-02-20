@@ -13,6 +13,67 @@ const downloads = require('./downloads');
 const serverProcesses = new Map();
 const cpuUsageTracking = new Map();
 
+// Cache for PID liveness to avoid blocking tasklist/ps calls when multiple servers are polled
+const pidAliveCache = new Map(); // pid -> { alive: boolean, ts: number }
+const PID_ALIVE_CACHE_TTL_MS = 1600;
+
+function checkPidAliveWindows(pid) {
+  try {
+    const result = execSync(`tasklist /FI "PID eq ${pid}" /FO CSV /NH`, {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+      timeout: 2000
+    });
+    return result.trim().includes(pid.toString());
+  } catch (error) {
+    return false;
+  }
+}
+
+// Async PID check (non-blocking) for use in listServers and usage refresh; uses cache to avoid repeated tasklist/ps
+async function isPidAliveAsync(pid) {
+  if (!pid) return false;
+  const now = Date.now();
+  const cached = pidAliveCache.get(pid);
+  if (cached && now - cached.ts < PID_ALIVE_CACHE_TTL_MS) {
+    return cached.alive;
+  }
+  let alive = false;
+  try {
+    if (os.platform() === 'win32') {
+      alive = await new Promise((resolve) => {
+        const child = spawn('cmd', ['/c', 'tasklist', '/FI', `PID eq ${pid}`, '/FO', 'CSV', '/NH'], {
+          stdio: ['ignore', 'pipe', 'pipe'],
+          windowsHide: true
+        });
+        let out = '';
+        child.stdout.on('data', (chunk) => { out += chunk.toString(); });
+        child.on('error', () => resolve(false));
+        child.on('close', (code) => {
+          resolve(code === 0 && out.trim().includes(pid.toString()));
+        });
+        setTimeout(() => {
+          if (!child.killed) {
+            child.kill();
+            resolve(false);
+          }
+        }, 2500);
+      });
+    } else {
+      try {
+        process.kill(pid, 0);
+        alive = true;
+      } catch (err) {
+        alive = false;
+      }
+    }
+  } catch (error) {
+    alive = false;
+  }
+  pidAliveCache.set(pid, { alive, ts: now });
+  return alive;
+}
+
 async function isPortAvailable(port) {
   return new Promise((resolve) => {
     if (!Number.isInteger(port) || port <= 0 || port > 65535) {
@@ -165,24 +226,30 @@ function isProcessAlive(process) {
   }
 }
 
+// Sync PID check; uses cache when available to avoid blocking, otherwise falls back to tasklist (Windows)
 function isPidAlive(pid) {
   if (!pid) return false;
+  const now = Date.now();
+  const cached = pidAliveCache.get(pid);
+  if (cached && now - cached.ts < PID_ALIVE_CACHE_TTL_MS) {
+    return cached.alive;
+  }
   try {
     if (os.platform() === 'win32') {
-      const result = execSync(`tasklist /FI "PID eq ${pid}" /FO CSV /NH`, {
-        encoding: 'utf8',
-        stdio: ['ignore', 'pipe', 'ignore'],
-        timeout: 2000
-      });
-      return result.trim().includes(pid.toString());
+      const alive = checkPidAliveWindows(pid);
+      pidAliveCache.set(pid, { alive, ts: now });
+      return alive;
     }
     try {
       process.kill(pid, 0);
+      pidAliveCache.set(pid, { alive: true, ts: now });
       return true;
     } catch (error) {
+      pidAliveCache.set(pid, { alive: false, ts: now });
       return false;
     }
   } catch (error) {
+    pidAliveCache.set(pid, { alive: false, ts: now });
     return false;
   }
 }
@@ -652,33 +719,41 @@ async function getServerLogs(serverName, maxLines = 1000) {
   }
 }
 
-// Get player count from server logs (simple parsing)
+// Cache player count to avoid reading latest.log on every poll (ServerCard + ServerDetailView)
+const playerCountCache = new Map(); // serverName -> { online, max, ts }
+const PLAYER_COUNT_CACHE_TTL_MS = 4000;
+
+// Get player count from server logs (simple parsing); uses short cache to reduce log reads
 async function getPlayerCount(serverName) {
   try {
+    if (!serverProcesses.has(serverName)) {
+      return { success: true, online: 0, max: 0 };
+    }
+
+    const now = Date.now();
+    const cached = playerCountCache.get(serverName);
+    if (cached && now - cached.ts < PLAYER_COUNT_CACHE_TTL_MS) {
+      return { success: true, online: cached.online, max: cached.max };
+    }
+
     const settings = await config.getAppSettings();
     const serversDir = settings.serversDirectory || config.SERVERS_DIR;
     const serverPath = path.join(serversDir, serverName);
     const logPath = path.join(serverPath, 'logs', 'latest.log');
 
-    // Check if server is running
-    if (!serverProcesses.has(serverName)) {
-      return { success: true, online: 0, max: 0 };
-    }
-
     try {
       const logContent = await fs.readFile(logPath, 'utf8');
       const lines = logContent.split('\n').reverse().slice(0, 100); // Check last 100 lines
-      
-      // Look for player count in logs (format: "There are X of a max of Y players online")
+
       for (const line of lines) {
         const match = line.match(/There are (\d+) of a max of (\d+) players online/i);
         if (match) {
-          return { success: true, online: parseInt(match[1]), max: parseInt(match[2]) };
+          const result = { success: true, online: parseInt(match[1]), max: parseInt(match[2]) };
+          playerCountCache.set(serverName, { online: result.online, max: result.max, ts: now });
+          return result;
         }
-        // Also check for "players online:" format
         const match2 = line.match(/(\d+) players? online/i);
         if (match2) {
-          // Try to find max players from server.properties
           let maxPlayers = 20;
           try {
             const propsPath = path.join(serverPath, 'server.properties');
@@ -688,130 +763,145 @@ async function getPlayerCount(serverName) {
               maxPlayers = parseInt(maxMatch[1]);
             }
           } catch {}
-          return { success: true, online: parseInt(match2[1]), max: maxPlayers };
+          const result = { success: true, online: parseInt(match2[1]), max: maxPlayers };
+          playerCountCache.set(serverName, { online: result.online, max: result.max, ts: now });
+          return result;
         }
       }
     } catch (err) {
       // Log file might not exist yet
     }
 
+    playerCountCache.set(serverName, { online: 0, max: 0, ts: now });
     return { success: true, online: 0, max: 0 };
   } catch (error) {
     return { success: false, error: error.message };
   }
 }
 
-// List servers
+// List servers (batches PID liveness checks to avoid blocking when many servers exist)
 async function listServers() {
   try {
     await config.ensureDirectories();
     const configs = await config.loadServerConfigs();
-    const serverList = [];
-    // Get custom servers directory from settings, or use default
     const settings = await config.getAppSettings();
     const serversDir = settings.serversDirectory || config.SERVERS_DIR;
     const serverDirs = await fs.readdir(serversDir);
 
+    // Build list of server entries and collect PIDs to check in one batch (non-blocking)
+    const entries = [];
+    const pidsToCheck = new Set();
     for (const serverName of serverDirs) {
       const serverPath = path.join(serversDir, serverName);
-      const stat = await fs.stat(serverPath);
-      
-      if (stat.isDirectory()) {
-        const files = await fs.readdir(serverPath);
-        const jarFile = files.find(f => f.endsWith('.jar'));
-        
-        if (jarFile) {
-          const serverConfig = configs[serverName];
-          let isRunning = serverProcesses.has(serverName);
-          if (!isRunning && serverConfig?.pid && isPidAlive(serverConfig.pid)) {
-            isRunning = true;
-          }
-          
-          // Determine status: check process first, then config
-          let status = 'STOPPED';
-          if (isRunning) {
-            const process = serverProcesses.get(serverName);
-            if (process && isProcessAlive(process)) {
-              status = 'RUNNING';
-            } else {
-              // Process is dead, remove it and update config
-              serverProcesses.delete(serverName);
-              cpuUsageTracking.delete(serverName);
-              status = 'STOPPED';
-              // Update config to reflect actual status
-              if (serverConfig) {
-                await config.saveServerConfig(serverName, {
-                  ...serverConfig,
-                  status: 'STOPPED',
-                  pid: undefined
-                });
-              }
-            }
-          } else if (serverConfig?.pid && !isPidAlive(serverConfig.pid)) {
+      let stat;
+      try {
+        stat = await fs.stat(serverPath);
+      } catch {
+        continue;
+      }
+      if (!stat.isDirectory()) continue;
+      let files;
+      try {
+        files = await fs.readdir(serverPath);
+      } catch {
+        continue;
+      }
+      const jarFile = files.find(f => f.endsWith('.jar'));
+      if (!jarFile) continue;
+      const serverConfig = configs[serverName];
+      if (serverConfig?.pid) pidsToCheck.add(serverConfig.pid);
+      entries.push({ serverName, serverPath, files, jarFile, serverConfig });
+    }
+
+    const pidAliveMap = new Map();
+    await Promise.all(
+      Array.from(pidsToCheck).map(async (pid) => {
+        const alive = await isPidAliveAsync(pid);
+        pidAliveMap.set(pid, alive);
+      })
+    );
+
+    const serverList = [];
+    for (const { serverName, serverPath, jarFile, serverConfig } of entries) {
+      let isRunning = serverProcesses.has(serverName);
+      if (!isRunning && serverConfig?.pid && pidAliveMap.get(serverConfig.pid)) {
+        isRunning = true;
+      }
+
+      let status = 'STOPPED';
+      if (isRunning) {
+        const proc = serverProcesses.get(serverName);
+        if (proc && isProcessAlive(proc)) {
+          status = 'RUNNING';
+        } else {
+          serverProcesses.delete(serverName);
+          cpuUsageTracking.delete(serverName);
+          status = 'STOPPED';
+          if (serverConfig) {
             await config.saveServerConfig(serverName, {
               ...serverConfig,
               status: 'STOPPED',
               pid: undefined
             });
-          } else if (serverConfig && serverConfig.status === 'STARTING') {
-            status = 'STARTING';
-          } else if (serverConfig) {
-            status = serverConfig.status || 'STOPPED';
           }
-          
-          // If config says RUNNING but process doesn't exist, fix it
-          if (serverConfig && serverConfig.status === 'RUNNING' && !isRunning) {
-            status = 'STOPPED';
-            await config.saveServerConfig(serverName, {
-              ...serverConfig,
-              status: 'STOPPED',
-              pid: undefined
-            });
-          }
-          
-          // Extract version from jar filename if not in config
-          let version = 'unknown';
-          if (serverConfig && serverConfig.version) {
-            version = serverConfig.version;
-          } else {
-            // Try to extract version from various jar filename patterns
-            const versionMatch = jarFile.match(/(?:paper|spigot|velocity|waterfall|bungeecord|server|fabric|forge)-?(\d+\.\d+(?:\.\d+)?)/i);
-            if (versionMatch) {
-              version = versionMatch[1];
-            } else if (jarFile.includes('manual') || jarFile.includes('custom')) {
-              version = 'manual';
-            }
-          }
-          
-          // Create config for existing servers without config (backward compatibility)
-          if (!serverConfig) {
-            // Save actual status (convert RUNNING to STOPPED for config since process map is source of truth)
-            const configStatus = status === 'RUNNING' ? 'STOPPED' : status;
-            await config.saveServerConfig(serverName, {
-              version,
-              ramGB: 4,
-              status: configStatus,
-              port: 25565
-            });
-          } else if (status === 'RUNNING' && serverConfig.status !== 'RUNNING') {
-            // Update config if process is running but config says otherwise
-            await config.saveServerConfig(serverName, {
-              ...serverConfig,
-              status: 'RUNNING'
-            });
-          }
-          
-          serverList.push({
-            id: serverName,
-            name: serverName,
-            version,
-            status: status, // Keep status as RUNNING, STOPPED, or STARTING
-            port: serverConfig?.port || 25565,
-            ramGB: serverConfig?.ramGB || 4,
-            serverType: serverConfig?.serverType || 'paper',
-          });
+        }
+      } else if (serverConfig?.pid && !pidAliveMap.get(serverConfig.pid)) {
+        await config.saveServerConfig(serverName, {
+          ...serverConfig,
+          status: 'STOPPED',
+          pid: undefined
+        });
+      } else if (serverConfig?.status === 'STARTING') {
+        status = 'STARTING';
+      } else if (serverConfig) {
+        status = serverConfig.status || 'STOPPED';
+      }
+
+      if (serverConfig?.status === 'RUNNING' && !isRunning) {
+        status = 'STOPPED';
+        await config.saveServerConfig(serverName, {
+          ...serverConfig,
+          status: 'STOPPED',
+          pid: undefined
+        });
+      }
+
+      let version = 'unknown';
+      if (serverConfig?.version) {
+        version = serverConfig.version;
+      } else {
+        const versionMatch = jarFile.match(/(?:paper|spigot|velocity|waterfall|bungeecord|server|fabric|forge)-?(\d+\.\d+(?:\.\d+)?)/i);
+        if (versionMatch) {
+          version = versionMatch[1];
+        } else if (jarFile.includes('manual') || jarFile.includes('custom')) {
+          version = 'manual';
         }
       }
+
+      if (!serverConfig) {
+        const configStatus = status === 'RUNNING' ? 'STOPPED' : status;
+        await config.saveServerConfig(serverName, {
+          version,
+          ramGB: 4,
+          status: configStatus,
+          port: 25565
+        });
+      } else if (status === 'RUNNING' && serverConfig.status !== 'RUNNING') {
+        await config.saveServerConfig(serverName, {
+          ...serverConfig,
+          status: 'RUNNING'
+        });
+      }
+
+      serverList.push({
+        id: serverName,
+        name: serverName,
+        version,
+        status,
+        port: serverConfig?.port || 25565,
+        ramGB: serverConfig?.ramGB || 4,
+        serverType: serverConfig?.serverType || 'paper',
+      });
     }
 
     return serverList;

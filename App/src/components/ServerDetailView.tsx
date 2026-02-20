@@ -225,7 +225,7 @@ export default function ServerDetailView({ serverName, onBack }: ServerDetailVie
       }
     };
     load();
-    const interval = setInterval(load, 3000);
+    const interval = setInterval(load, 5000); // dashboard: every 5s to reduce IPC when multiple servers
     return () => {
       cancelled = true;
       clearInterval(interval);
@@ -291,7 +291,7 @@ export default function ServerDetailView({ serverName, onBack }: ServerDetailVie
     };
 
     updateUsage();
-    const interval = setInterval(updateUsage, 1000);
+    const interval = setInterval(updateUsage, 2500); // usage every 2.5s (main process already caches every 2s)
     return () => clearInterval(interval);
   }, [isRunning, serverName, getServerUsage]);
 
