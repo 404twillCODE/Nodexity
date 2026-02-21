@@ -46,7 +46,7 @@ const ServerCard = memo(function ServerCard({ server, onStart, onStop, onClick }
     };
 
     updatePlayerCount();
-    const interval = setInterval(updatePlayerCount, 5000); // Update every 5 seconds
+    const interval = setInterval(updatePlayerCount, 8000); // every 8s (getPlayerCount is cached ~4s)
     return () => clearInterval(interval);
   }, [isRunning, server.id, getPlayerCount]);
 

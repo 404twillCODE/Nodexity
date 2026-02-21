@@ -154,9 +154,9 @@ const AggregateStatsPanel = memo(function AggregateStatsPanel({
     if (usageIntervalRef.current) clearInterval(usageIntervalRef.current);
     if (diskIntervalRef.current) clearInterval(diskIntervalRef.current);
 
-    const usageInterval = Math.max(500, Math.floor(refreshMs / 2));
-    usageIntervalRef.current = setInterval(loadUsageStats, usageInterval); // fast CPU/RAM
-    diskIntervalRef.current = setInterval(loadDiskStats, 15000); // slow disk scan
+    const usageInterval = Math.max(2000, refreshMs); // avoid sub-2s polling when multiple servers run
+    usageIntervalRef.current = setInterval(loadUsageStats, usageInterval);
+    diskIntervalRef.current = setInterval(loadDiskStats, 20000); // disk scan every 20s
 
     return () => {
       if (usageIntervalRef.current) clearInterval(usageIntervalRef.current);

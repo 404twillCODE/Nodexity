@@ -391,39 +391,62 @@ ipcMain.handle('import-server', async (event, sourceFolderPath, serverName) => {
   return await serverManager.importServer(sourceFolderPath, serverName);
 });
 
+// Batched log buffers per server to reduce IPC volume when multiple servers are running
+const serverLogBuffers = new Map(); // serverName -> { stdout: string, stderr: string, timer: NodeJS.Timeout | null }
+const LOG_FLUSH_MS = 80;
+
+function flushServerLog(serverName) {
+  const buf = serverLogBuffers.get(serverName);
+  if (!buf || (!buf.stdout && !buf.stderr) || !mainWindow || mainWindow.isDestroyed()) {
+    if (buf) buf.timer = null;
+    return;
+  }
+  if (buf.stdout) {
+    mainWindow.webContents.send('server-log', { serverName, type: 'stdout', data: buf.stdout });
+    buf.stdout = '';
+  }
+  if (buf.stderr) {
+    mainWindow.webContents.send('server-log', { serverName, type: 'stderr', data: buf.stderr });
+    buf.stderr = '';
+  }
+  buf.timer = null;
+}
+
+function pushServerLog(serverName, type, data) {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  let buf = serverLogBuffers.get(serverName);
+  if (!buf) {
+    buf = { stdout: '', stderr: '', timer: null };
+    serverLogBuffers.set(serverName, buf);
+  }
+  if (type === 'stdout') buf.stdout += data;
+  else buf.stderr += data;
+  if (!buf.timer) {
+    buf.timer = setTimeout(() => {
+      flushServerLog(serverName);
+    }, LOG_FLUSH_MS);
+  }
+}
+
 ipcMain.handle('start-server', async (event, serverName, ramGB) => {
   const result = await serverManager.startServer(serverName, ramGB);
   
   if (result.success) {
-    // Set up log streaming
     const process = serverManager.getServerProcess(serverName);
     if (process && mainWindow) {
-      // Remove existing listeners to avoid duplicates
       process.stdout.removeAllListeners('data');
       process.stderr.removeAllListeners('data');
-      
+      serverLogBuffers.delete(serverName);
+
       process.stdout.on('data', (data) => {
         const str = data.toString();
         serverManager.feedServerOutput(serverName, str);
-        if (mainWindow && !mainWindow.isDestroyed()) {
-          mainWindow.webContents.send('server-log', {
-            serverName,
-            type: 'stdout',
-            data: str,
-          });
-        }
+        pushServerLog(serverName, 'stdout', str);
       });
-
       process.stderr.on('data', (data) => {
         const str = data.toString();
         serverManager.feedServerOutput(serverName, str);
-        if (mainWindow && !mainWindow.isDestroyed()) {
-          mainWindow.webContents.send('server-log', {
-            serverName,
-            type: 'stderr',
-            data: str,
-          });
-        }
+        pushServerLog(serverName, 'stderr', str);
       });
     }
   }
@@ -432,6 +455,9 @@ ipcMain.handle('start-server', async (event, serverName, ramGB) => {
 });
 
 ipcMain.handle('stop-server', async (event, serverName) => {
+  const buf = serverLogBuffers.get(serverName);
+  if (buf?.timer) clearTimeout(buf.timer);
+  serverLogBuffers.delete(serverName);
   return await serverManager.stopServer(serverName);
 });
 
@@ -440,6 +466,9 @@ ipcMain.handle('restart-server', async (event, serverName, ramGB) => {
 });
 
 ipcMain.handle('kill-server', async (event, serverName) => {
+  const buf = serverLogBuffers.get(serverName);
+  if (buf?.timer) clearTimeout(buf.timer);
+  serverLogBuffers.delete(serverName);
   return await serverManager.killServer(serverName);
 });
 

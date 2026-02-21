@@ -22,6 +22,10 @@ const SERVERS_DIR = path.join(NODEXITY_DIR, 'servers');
 const BACKUPS_DIR = path.join(NODEXITY_DIR, 'backups');
 const CONFIG_FILE = path.join(NODEXITY_DIR, 'servers.json');
 
+// In-memory cache for server configs to avoid repeated disk reads (e.g. during listServers polling)
+const CONFIG_CACHE = { data: null, fileMtime: 0, cachedAt: 0 };
+const CONFIG_CACHE_TTL_MS = 1500;
+
 // Ensure directories exist
 async function ensureDirectories() {
   await fs.mkdir(NODEXITY_DIR, { recursive: true });
@@ -37,20 +41,38 @@ function normalizeRamGB(value, fallback) {
   return fallback;
 }
 
-// Load server configs
+// Load server configs (with short-lived cache to reduce disk I/O when multiple servers are running)
 async function loadServerConfigs() {
+  const now = Date.now();
   try {
+    const stat = await fs.stat(CONFIG_FILE);
+    const mtime = stat.mtimeMs;
+    if (CONFIG_CACHE.data !== null && CONFIG_CACHE.fileMtime === mtime && now - CONFIG_CACHE.cachedAt < CONFIG_CACHE_TTL_MS) {
+      return CONFIG_CACHE.data;
+    }
     const data = await fs.readFile(CONFIG_FILE, 'utf8');
-    return JSON.parse(data);
+    const parsed = JSON.parse(data);
+    CONFIG_CACHE.data = parsed;
+    CONFIG_CACHE.fileMtime = mtime;
+    CONFIG_CACHE.cachedAt = now;
+    return parsed;
   } catch (error) {
     return {};
   }
+}
+
+// Invalidate config cache (call after any save so next load reads from disk)
+function invalidateConfigCache() {
+  CONFIG_CACHE.data = null;
+  CONFIG_CACHE.fileMtime = 0;
+  CONFIG_CACHE.cachedAt = 0;
 }
 
 // Save server configs
 async function saveServerConfigs(configs) {
   await ensureDirectories();
   await fs.writeFile(CONFIG_FILE, JSON.stringify(configs, null, 2), 'utf8');
+  invalidateConfigCache();
 }
 
 // Get server config
