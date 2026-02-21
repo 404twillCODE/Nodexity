@@ -51,6 +51,7 @@ module.exports = {
   deleteServer: serverLifecycle.deleteServer,
   getServerLogs: serverLifecycle.getServerLogs,
   getPlayerCount: serverLifecycle.getPlayerCount,
+  feedServerOutput: serverLifecycle.feedServerOutput,
   importServer: serverLifecycle.importServer,
 
   // --- File operations ---
@@ -67,9 +68,18 @@ module.exports = {
   // --- Plugins ---
   checkJarSupportsPlugins: fileOps.checkJarSupportsPlugins,
   getModrinthPlugins: fileOps.getModrinthPlugins,
+  installEssentialsXFromGitHub: fileOps.installEssentialsXFromGitHub,
   installModrinthPlugin: fileOps.installModrinthPlugin,
   listPlugins: fileOps.listPlugins,
   deletePlugin: fileOps.deletePlugin,
+
+  // --- Mods ---
+  checkJarSupportsMods: fileOps.checkJarSupportsMods,
+  getModrinthMods: fileOps.getModrinthMods,
+  installModrinthMod: fileOps.installModrinthMod,
+  listMods: fileOps.listMods,
+  deleteMod: fileOps.deleteMod,
+  installGeyserFloodgate: fileOps.installGeyserFloodgate,
 
   // --- Worlds ---
   listWorlds: fileOps.listWorlds,

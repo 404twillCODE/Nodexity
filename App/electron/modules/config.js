@@ -104,6 +104,7 @@ async function getAppSettings() {
   return configs._appSettings || {
     serversDirectory: SERVERS_DIR,
     backupsDirectory: BACKUPS_DIR,
+    sidebarCollapsed: false,
     showBootSequence: true,
     minimizeToTray: false,
     startWithWindows: false,
@@ -132,13 +133,15 @@ async function getAppSettings() {
   };
 }
 
-// Save app settings
+// Save app settings (merges with existing so partial updates e.g. sidebarCollapsed persist correctly)
 async function saveAppSettings(settings) {
   const configs = await loadServerConfigs();
+  const existing = configs._appSettings || {};
   const finalSettings = {
+    ...existing,
     ...settings,
-    serversDirectory: settings.serversDirectory || SERVERS_DIR,
-    backupsDirectory: settings.backupsDirectory || BACKUPS_DIR
+    serversDirectory: settings.serversDirectory ?? existing.serversDirectory ?? SERVERS_DIR,
+    backupsDirectory: settings.backupsDirectory ?? existing.backupsDirectory ?? BACKUPS_DIR
   };
   configs._appSettings = finalSettings;
   await saveServerConfigs(configs);

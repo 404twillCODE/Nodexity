@@ -4,9 +4,10 @@ const fs = require('fs');
 const https = require('https');
 const isDev = !app.isPackaged || process.env.NODE_ENV === 'development';
 
-// Use .nodexity for all app data (config + Electron userData) so only one folder is created
+// Keep Nodexity data (servers, backups, config) in .nodexity; put Electron/Chromium caches in a subfolder
 const config = require('./modules/config');
-app.setPath('userData', config.NODEXITY_DIR);
+const ELECTRON_USER_DATA = path.join(config.NODEXITY_DIR, '_app');
+app.setPath('userData', ELECTRON_USER_DATA);
 
 const serverManager = require('./serverManager');
 
@@ -402,21 +403,25 @@ ipcMain.handle('start-server', async (event, serverName, ramGB) => {
       process.stderr.removeAllListeners('data');
       
       process.stdout.on('data', (data) => {
+        const str = data.toString();
+        serverManager.feedServerOutput(serverName, str);
         if (mainWindow && !mainWindow.isDestroyed()) {
           mainWindow.webContents.send('server-log', {
             serverName,
             type: 'stdout',
-            data: data.toString(),
+            data: str,
           });
         }
       });
 
       process.stderr.on('data', (data) => {
+        const str = data.toString();
+        serverManager.feedServerOutput(serverName, str);
         if (mainWindow && !mainWindow.isDestroyed()) {
           mainWindow.webContents.send('server-log', {
             serverName,
             type: 'stderr',
-            data: data.toString(),
+            data: str,
           });
         }
       });
@@ -516,6 +521,15 @@ ipcMain.handle('get-modrinth-plugins', async (event, minecraftVersion, limit) =>
   }
 });
 
+ipcMain.handle('install-essentialsx-from-github', async (event, serverName) => {
+  try {
+    return await serverManager.installEssentialsXFromGitHub(serverName);
+  } catch (error) {
+    console.error('Error in install-essentialsx-from-github handler:', error);
+    return { success: false, error: error.message };
+  }
+});
+
 ipcMain.handle('install-modrinth-plugin', async (event, serverName, projectId, minecraftVersion) => {
   try {
     if (!serverManager.installModrinthPlugin) {
@@ -525,6 +539,50 @@ ipcMain.handle('install-modrinth-plugin', async (event, serverName, projectId, m
     return await serverManager.installModrinthPlugin(serverName, projectId, minecraftVersion);
   } catch (error) {
     console.error('Error in install-modrinth-plugin handler:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('list-mods', async (event, serverName) => {
+  return await serverManager.listMods(serverName);
+});
+
+ipcMain.handle('delete-mod', async (event, serverName, modName) => {
+  return await serverManager.deleteMod(serverName, modName);
+});
+
+ipcMain.handle('check-jar-supports-mods', async (event, serverName) => {
+  try {
+    const result = await serverManager.checkJarSupportsMods(serverName);
+    return result && typeof result === 'object' ? result : { supportsMods: false };
+  } catch (error) {
+    return { supportsMods: false };
+  }
+});
+
+ipcMain.handle('get-modrinth-mods', async (event, minecraftVersion, loader, limit) => {
+  try {
+    return await serverManager.getModrinthMods(minecraftVersion, loader || 'fabric', limit);
+  } catch (error) {
+    console.error('Error in get-modrinth-mods handler:', error);
+    return [];
+  }
+});
+
+ipcMain.handle('install-modrinth-mod', async (event, serverName, projectId, minecraftVersion) => {
+  try {
+    return await serverManager.installModrinthMod(serverName, projectId, minecraftVersion);
+  } catch (error) {
+    console.error('Error in install-modrinth-mod handler:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('install-geyser-floodgate', async (event, serverName, serverPort) => {
+  try {
+    return await serverManager.installGeyserFloodgate(serverName, serverPort || 25565);
+  } catch (error) {
+    console.error('Error in install-geyser-floodgate handler:', error);
     return { success: false, error: error.message };
   }
 });
@@ -554,21 +612,25 @@ ipcMain.handle('setup-log-streaming', async (event, serverName) => {
     process.stderr.removeAllListeners('data');
     
     process.stdout.on('data', (data) => {
+      const str = data.toString();
+      serverManager.feedServerOutput(serverName, str);
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('server-log', {
           serverName,
           type: 'stdout',
-          data: data.toString(),
+          data: str,
         });
       }
     });
 
     process.stderr.on('data', (data) => {
+      const str = data.toString();
+      serverManager.feedServerOutput(serverName, str);
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('server-log', {
           serverName,
           type: 'stderr',
-          data: data.toString(),
+          data: str,
         });
       }
     });
@@ -606,7 +668,27 @@ ipcMain.handle('get-servers-disk-usage', async () => {
   return await serverManager.getServersDiskUsage();
 });
 
+// One-time cleanup: remove old Electron/Chromium files from parent dir (now in _app/)
+const CHROMIUM_ENTRIES = ['Cache', 'Code Cache', 'DawnCache', 'GPUCache', 'Local Storage', 'Network', 'Session Storage', 'Shared Dictionary', 'blob_storage', 'Local State', 'Preferences', 'SharedStorage'];
+async function cleanupLegacyElectronFolders() {
+  try {
+    const parentDir = config.NODEXITY_DIR;
+    const entries = await fs.promises.readdir(parentDir, { withFileTypes: true });
+    for (const entry of entries) {
+      if (CHROMIUM_ENTRIES.includes(entry.name)) {
+        const fullPath = path.join(parentDir, entry.name);
+        await fs.promises.rm(fullPath, { recursive: true, force: true });
+      }
+    }
+  } catch {
+    // Ignore cleanup errors
+  }
+}
+
 app.whenReady().then(() => {
+  // Clean up old Chromium folders from previous layout (runs once, non-blocking)
+  cleanupLegacyElectronFolders();
+
   // Set Content Security Policy
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
     const csp = isDev

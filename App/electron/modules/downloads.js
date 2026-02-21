@@ -262,59 +262,61 @@ async function getFabricVersions() {
   });
 }
 
-// Download Fabric installer and server
+// Download Fabric server launcher
 async function downloadFabric(serverPath, version) {
-  return new Promise(async (resolve, reject) => {
-    try {
-      // Get latest installer
-      https.get('https://meta.fabricmc.net/v2/versions/installer', (res) => {
-        let data = '';
-        res.on('data', (chunk) => { data += chunk; });
-        res.on('end', async () => {
-          try {
-            const installers = JSON.parse(data);
-            const installer = installers[0];
-            const installerUrl = installer.url;
-            
-            // Download installer
-            const installerPath = path.join(serverPath, 'fabric-installer.jar');
-            await downloadFile(installerUrl, installerPath);
-            
-            // Get loader version
-            https.get('https://meta.fabricmc.net/v2/versions/loader', (res2) => {
-              let loaderData = '';
-              res2.on('data', (chunk) => { loaderData += chunk; });
-              res2.on('end', async () => {
-                try {
-                  const loaders = JSON.parse(loaderData);
-                  const loader = loaders[0];
-                  
-                  // Use installer to generate server jar
-                  // For now, we'll use a direct download approach
-                  const serverJar = `fabric-server-mc.${version}-loader.${loader.version}-launcher.${installer.version}.jar`;
-                  const serverPath_final = path.join(serverPath, serverJar);
-                  
-                  // Fabric doesn't provide direct server downloads, so we'll need to use the installer
-                  // For simplicity, we'll create a script that runs the installer
-                  const script = `java -jar fabric-installer.jar server -mcversion ${version} -loader ${loader.version} -downloadMinecraft`;
-                  const scriptPath = path.join(serverPath, 'install-fabric.bat');
-                  await fs.writeFile(scriptPath, script);
-                  
-                  resolve(serverPath_final);
-                } catch (e) {
-                  reject(e);
-                }
-              });
-            }).on('error', reject);
-          } catch (e) {
-            reject(e);
-          }
-        });
-      }).on('error', reject);
-    } catch (error) {
-      reject(error);
-    }
+  // Get loader version for this specific game version
+  const loaderData = await new Promise((resolve, reject) => {
+    const encodedVersion = encodeURIComponent(version);
+    https.get(`https://meta.fabricmc.net/v2/versions/loader/${encodedVersion}`, (res) => {
+      let data = '';
+      res.on('data', (chunk) => { data += chunk; });
+      res.on('end', () => {
+        try {
+          resolve(JSON.parse(data));
+        } catch (e) {
+          reject(e);
+        }
+      });
+    }).on('error', reject);
   });
+
+  const loader = loaderData.find((l) => l.loader?.stable) || loaderData[0];
+  if (!loader?.loader?.version) {
+    throw new Error(`No Fabric loader found for Minecraft ${version}`);
+  }
+  const loaderVersion = loader.loader.version;
+
+  // Get installer version for the server jar URL
+  const installerMeta = await new Promise((resolve, reject) => {
+    https.get('https://meta.fabricmc.net/v2/versions/installer', (res) => {
+      let data = '';
+      res.on('data', (chunk) => { data += chunk; });
+      res.on('end', () => {
+        try {
+          resolve(JSON.parse(data));
+        } catch (e) {
+          reject(e);
+        }
+      });
+    }).on('error', reject);
+  });
+  const installerVersion = installerMeta?.[0]?.version || '1.1.1';
+
+  const encVersion = encodeURIComponent(version);
+  const encLoader = encodeURIComponent(loaderVersion);
+  const encInstaller = encodeURIComponent(installerVersion);
+  const serverJarUrl = `https://meta.fabricmc.net/v2/versions/loader/${encVersion}/${encLoader}/${encInstaller}/server/jar`;
+  const serverJarName = `fabric-server-${version}.jar`;
+  const serverJarPath = path.join(serverPath, serverJarName);
+
+  try {
+    await downloadFile(serverJarUrl, serverJarPath);
+  } catch (err) {
+    throw new Error(`Failed to download Fabric server: ${err.message}. Try a different Minecraft version.`);
+  }
+
+  await fs.writeFile(path.join(serverPath, 'eula.txt'), 'eula=true\n', 'utf8');
+  return serverJarPath;
 }
 
 // Get Forge versions
@@ -392,17 +394,17 @@ async function downloadForge(serverPath, version) {
               resolve(filepath);
             } catch (error) {
               // If direct download fails, suggest manual installation
-              reject(new Error(`Failed to download Forge ${version}. Please download the installer from https://files.minecraftforge.net/ and run it manually.`));
+              reject(new Error(`Failed to download Forge ${version}. Please download the installer from https://files.minecraftforge.net/ and run it manually. Then import the resulting server folder using the Import button on this page.`));
             }
           } catch (e) {
-            reject(new Error(`Failed to parse Forge metadata. Please use the Forge installer manually from https://files.minecraftforge.net/`));
+            reject(new Error(`Failed to parse Forge metadata. Please use the Forge installer manually from https://files.minecraftforge.net/, then import the server folder using the Import button on this page.`));
           }
         });
       }).on('error', (error) => {
-        reject(new Error(`Failed to fetch Forge metadata. Please use the Forge installer manually from https://files.minecraftforge.net/`));
+        reject(new Error(`Failed to fetch Forge metadata. Please use the Forge installer manually from https://files.minecraftforge.net/, then import the server folder using the Import button on this page.`));
       });
     } catch (error) {
-      reject(new Error(`Forge installation requires manual setup. Please download from https://files.minecraftforge.net/ and use the installer.`));
+      reject(new Error(`Forge installation requires manual setup. Please download from https://files.minecraftforge.net/ and use the installer. Then import the server folder using the Import button on this page.`));
     }
   });
 }

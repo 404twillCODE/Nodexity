@@ -27,16 +27,17 @@ export default function SetupOptionsView({
   const [defaultPort, setDefaultPort] = useState(25565);
   const [maxRAM, setMaxRAM] = useState(32); // Default, will be updated from system
   const [stepIndex, setStepIndex] = useState(0);
-  const [quickStartEnabled, setQuickStartEnabled] = useState(true);
-  const [quickStartName, setQuickStartName] = useState("");
-  const [quickStartType, setQuickStartType] = useState<"paper" | "spigot" | "vanilla" | "fabric" | "forge" | "purpur" | "velocity" | "waterfall" | "bungeecord">("paper");
-  const [quickStartVersion, setQuickStartVersion] = useState<string | null>(null);
-  const [quickStartVersions, setQuickStartVersions] = useState<string[]>([]);
-  const [quickStartLoading, setQuickStartLoading] = useState(false);
-  const [quickStartError, setQuickStartError] = useState<string | null>(null);
-  const [quickStartRAM, setQuickStartRAM] = useState(4);
-  const [quickStartRamTouched, setQuickStartRamTouched] = useState(false);
-  const [quickStartStartNow, setQuickStartStartNow] = useState(true);
+  type PresetType = "paper_plugins" | "vanilla" | "java_bedrock";
+  const [presetEnabled, setPresetEnabled] = useState(true);
+  const [presetType, setPresetType] = useState<PresetType>("paper_plugins");
+  const [presetName, setPresetName] = useState("");
+  const [presetVersion, setPresetVersion] = useState<string | null>(null);
+  const [presetVersions, setPresetVersions] = useState<string[]>([]);
+  const [presetLoading, setPresetLoading] = useState(false);
+  const [presetError, setPresetError] = useState<string | null>(null);
+  const [presetRAM, setPresetRAM] = useState(4);
+  const [presetRamTouched, setPresetRamTouched] = useState(false);
+  const [presetStartNow, setPresetStartNow] = useState(true);
   const [notifications, setNotifications] = useState({
     statusChanges: true,
     crashes: true,
@@ -49,31 +50,24 @@ export default function SetupOptionsView({
   }, []);
 
   useEffect(() => {
-    // Ensure defaultRAM doesn't exceed maxRAM when maxRAM changes
-    if (defaultRAM > maxRAM && maxRAM > 0) {
-      setDefaultRAM(maxRAM);
-    }
-    if (quickStartRAM > maxRAM && maxRAM > 0) {
-      setQuickStartRAM(maxRAM);
-    }
+    if (defaultRAM > maxRAM && maxRAM > 0) setDefaultRAM(maxRAM);
+    if (presetRAM > maxRAM && maxRAM > 0) setPresetRAM(maxRAM);
   }, [maxRAM]);
 
   useEffect(() => {
-    if (!quickStartEnabled) {
-      setQuickStartRamTouched(false);
-      setQuickStartRAM(defaultRAM);
+    if (!presetEnabled) {
+      setPresetRamTouched(false);
+      setPresetRAM(defaultRAM);
       return;
     }
-    if (!quickStartRamTouched) {
-      setQuickStartRAM(defaultRAM);
-    }
-  }, [defaultRAM, quickStartEnabled, quickStartRamTouched]);
+    if (!presetRamTouched) setPresetRAM(defaultRAM);
+  }, [defaultRAM, presetEnabled, presetRamTouched]);
 
   useEffect(() => {
-    if (quickStartEnabled) {
-      loadQuickStartVersions();
+    if (presetEnabled && (presetType === "paper_plugins" || presetType === "java_bedrock" || presetType === "vanilla")) {
+      loadPresetVersions();
     }
-  }, [quickStartEnabled, quickStartType]);
+  }, [presetEnabled, presetType]);
 
   const loadSystemRAM = async () => {
     if (!window.electronAPI) return;
@@ -104,7 +98,7 @@ export default function SetupOptionsView({
       setMaxBackups(settings.maxBackups || 10);
       setDefaultRAM(settings.defaultRAM || 4);
       setDefaultPort(settings.defaultPort || 25565);
-      setQuickStartRAM(settings.defaultRAM || 4);
+      setPresetRAM(settings.defaultRAM || 4);
       setNotifications({
         statusChanges: settings.notifications?.statusChanges ?? true,
         crashes: settings.notifications?.crashes ?? true,
@@ -150,7 +144,7 @@ export default function SetupOptionsView({
     onFinalizing?.();
     setCompleting(true);
     updateStatus("Setting up dashboard...");
-    setQuickStartError(null);
+    setPresetError(null);
     
     try {
       // Small delay to ensure status is visible
@@ -173,56 +167,77 @@ export default function SetupOptionsView({
 
       await window.electronAPI.server.completeSetup(settings);
 
-      if (quickStartEnabled) {
+      if (presetEnabled) {
         const fallbackName = "My First Server";
-        const trimmedName = quickStartName.trim() || fallbackName;
+        const trimmedName = presetName.trim() || fallbackName;
         if (defaultPort < 1024 || defaultPort > 65535) {
-          setQuickStartError("Please set a valid default port (1024-65535).");
+          setPresetError("Please set a valid default port (1024-65535).");
           return;
         }
 
         const sanitizedName = trimmedName.replace(/\s+/g, '-');
-        
-        // Find available port
-        let quickStartPort = defaultPort;
+        let presetPort = defaultPort;
         if (window.electronAPI?.server?.findAvailablePort) {
           updateStatus("Checking port availability...");
           const resolvedPort = await window.electronAPI.server.findAvailablePort(defaultPort);
           if (resolvedPort) {
-            quickStartPort = resolvedPort;
+            presetPort = resolvedPort;
             if (resolvedPort !== defaultPort) {
               updateStatus(`Port ${defaultPort} in use. Using ${resolvedPort}...`);
               await new Promise(resolve => setTimeout(resolve, 800));
             }
           }
         }
-        
-        // Download and create server
+
+        const serverType = presetType === "vanilla" ? "vanilla" : "paper";
+        const version = presetVersion || (presetType === "vanilla" ? (await window.electronAPI.server.getVanillaVersions())[0] : (await window.electronAPI.server.getPaperVersions())[0]);
+
         updateStatus("Downloading server jar...");
         const createResult = await window.electronAPI.server.createServer(
           sanitizedName,
-          quickStartType,
-          quickStartVersion,
-          quickStartRAM,
-          quickStartPort,
+          serverType,
+          version,
+          presetRAM,
+          presetPort,
           null,
           trimmedName
         );
 
         if (!createResult.success) {
-          setQuickStartError(createResult.error || "Failed to create the starter server.");
+          setPresetError(createResult.error || "Failed to create the server.");
           return;
         }
 
-        // Start server if enabled
-        if (quickStartStartNow) {
-          updateStatus("Starting server...");
-          const startResult = await window.electronAPI.server.startServer(sanitizedName, quickStartRAM);
-          if (!startResult.success) {
-            setQuickStartError(startResult.error || "Starter server created, but failed to start.");
+        if (presetType === "paper_plugins") {
+          updateStatus("Installing EssentialsX (from GitHub)...");
+          const exResult = await window.electronAPI.server.installEssentialsXFromGitHub(sanitizedName);
+          if (!exResult.success) console.warn("Could not install EssentialsX:", exResult.error);
+          const modrinthPlugins = [
+            { id: "luckperms", name: "LuckPerms" },
+            { id: "worldedit", name: "WorldEdit" },
+            { id: "chunky", name: "Chunky" }
+          ];
+          for (const p of modrinthPlugins) {
+            updateStatus(`Installing ${p.name}...`);
+            const r = await window.electronAPI.server.installModrinthPlugin(sanitizedName, p.id, version);
+            if (!r.success) console.warn(`Could not install ${p.name}:`, r.error);
+          }
+        } else if (presetType === "java_bedrock") {
+          updateStatus("Installing Geyser and Floodgate (Java + Bedrock)...");
+          const r = await window.electronAPI.server.installGeyserFloodgate(sanitizedName, presetPort);
+          if (!r.success) {
+            setPresetError(r.error || "Failed to install Geyser/Floodgate.");
             return;
           }
-          // Give a moment for the server to begin starting
+        }
+
+        if (presetStartNow) {
+          updateStatus("Starting server...");
+          const startResult = await window.electronAPI.server.startServer(sanitizedName, presetRAM);
+          if (!startResult.success) {
+            setPresetError(startResult.error || "Server created, but failed to start.");
+            return;
+          }
           await new Promise(resolve => setTimeout(resolve, 1000));
         }
       }
@@ -242,58 +257,32 @@ export default function SetupOptionsView({
     setNotifications(prev => ({ ...prev, [key]: value }));
   };
 
-  const loadQuickStartVersions = async () => {
+  const loadPresetVersions = async () => {
     if (!window.electronAPI) return;
-    setQuickStartLoading(true);
-    setQuickStartError(null);
+    setPresetLoading(true);
+    setPresetError(null);
     try {
       let versions: string[] = [];
-      switch (quickStartType) {
-        case "paper":
-          versions = await window.electronAPI.server.getPaperVersions();
-          break;
-        case "spigot":
-          versions = await window.electronAPI.server.getSpigotVersions();
-          break;
-        case "vanilla":
-          versions = await window.electronAPI.server.getVanillaVersions();
-          break;
-        case "fabric":
-          versions = await window.electronAPI.server.getFabricVersions();
-          break;
-        case "forge":
-          versions = await window.electronAPI.server.getForgeVersions();
-          break;
-        case "purpur":
-          versions = await window.electronAPI.server.getPurpurVersions();
-          break;
-        case "velocity":
-          versions = await window.electronAPI.server.getVelocityVersions();
-          break;
-        case "waterfall":
-          versions = await window.electronAPI.server.getWaterfallVersions();
-          break;
-        case "bungeecord":
-          versions = await window.electronAPI.server.getBungeeCordVersions();
-          break;
-        default:
-          versions = [];
+      if (presetType === "paper_plugins" || presetType === "java_bedrock") {
+        versions = await window.electronAPI.server.getPaperVersions();
+      } else if (presetType === "vanilla") {
+        versions = await window.electronAPI.server.getVanillaVersions();
       }
-      setQuickStartVersions(versions);
-      setQuickStartVersion(versions[0] || null);
+      setPresetVersions(versions);
+      setPresetVersion(versions[0] || null);
     } catch (error) {
-      setQuickStartVersions([]);
-      setQuickStartVersion(null);
-      setQuickStartError("Failed to load server versions.");
+      setPresetVersions([]);
+      setPresetVersion(null);
+      setPresetError("Failed to load server versions.");
     } finally {
-      setQuickStartLoading(false);
+      setPresetLoading(false);
     }
   };
 
   const steps = [
     { key: "storage", title: "Storage Locations" },
     { key: "defaults", title: "Default Server Settings" },
-    { key: "quickstart", title: "Quick Start" },
+    { key: "presets", title: "Preset Server" },
     { key: "behavior", title: "Application Behavior" },
     { key: "notifications", title: "Notifications" }
   ];
@@ -503,97 +492,111 @@ export default function SetupOptionsView({
           </div>
           )}
 
-          {/* Quick Start */}
+          {/* Preset Server */}
           {stepIndex === 2 && (
           <div className="border border-border rounded p-4">
             <h3 className="text-sm font-semibold text-text-primary font-mono mb-3 uppercase tracking-wider">
-              Quick Start (Recommended)
+              Preset Server (Recommended)
             </h3>
             <div className="space-y-4 text-text-secondary font-mono text-sm">
               <div className="flex items-center justify-between">
                 <div>
-                  <span>Create a starter server now</span>
+                  <span>Create a preset server now</span>
                   <p className="text-xs text-text-muted">Skip the empty dashboard and launch instantly</p>
                 </div>
                 <ToggleSwitch
-                  checked={quickStartEnabled}
-                  onChange={(checked) => setQuickStartEnabled(checked)}
-                  ariaLabel="Create a starter server now"
+                  checked={presetEnabled}
+                  onChange={(checked) => setPresetEnabled(checked)}
+                  ariaLabel="Create a preset server now"
                 />
               </div>
 
-              {quickStartEnabled && (
+              {presetEnabled && (
                 <div className="space-y-3 border-t border-border pt-4">
+                  <div>
+                    <label className="block mb-2 text-text-primary">Preset</label>
+                    <div className="grid grid-cols-1 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setPresetType("paper_plugins")}
+                        className={`p-3 text-left rounded border transition-colors ${
+                          presetType === "paper_plugins"
+                            ? "border-accent bg-accent/10"
+                            : "border-border hover:border-accent/50"
+                        }`}
+                      >
+                        <span className="font-mono font-medium text-text-primary">Paper + Plugins</span>
+                        <p className="text-xs text-text-muted mt-0.5">Paper with EssentialsX, LuckPerms, WorldEdit, Chunky</p>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setPresetType("vanilla")}
+                        className={`p-3 text-left rounded border transition-colors ${
+                          presetType === "vanilla"
+                            ? "border-accent bg-accent/10"
+                            : "border-border hover:border-accent/50"
+                        }`}
+                      >
+                        <span className="font-mono font-medium text-text-primary">Vanilla</span>
+                        <p className="text-xs text-text-muted mt-0.5">Clean vanilla Minecraft server</p>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setPresetType("java_bedrock")}
+                        className={`p-3 text-left rounded border transition-colors ${
+                          presetType === "java_bedrock"
+                            ? "border-accent bg-accent/10"
+                            : "border-border hover:border-accent/50"
+                        }`}
+                      >
+                        <span className="font-mono font-medium text-text-primary">Java + Bedrock</span>
+                        <p className="text-xs text-text-muted mt-0.5">Geyser &amp; Floodgate — Bedrock players can join</p>
+                      </button>
+                    </div>
+                  </div>
                   <div>
                     <label className="block mb-2 text-text-primary">Server Name</label>
                     <input
                       type="text"
-                      value={quickStartName}
-                      onChange={(e) => setQuickStartName(e.target.value)}
+                      value={presetName}
+                      onChange={(e) => setPresetName(e.target.value)}
                       className="w-full bg-background border border-border px-3 py-2 text-text-primary font-mono text-sm focus:outline-none focus:border-accent/50 rounded"
                       placeholder="My First Server"
                     />
                   </div>
                   <div>
-                    <label className="block mb-2 text-text-primary">Server Type</label>
-                    <select
-                      value={quickStartType}
-                      onChange={(e) => setQuickStartType(e.target.value as "paper" | "spigot" | "vanilla" | "fabric" | "forge" | "purpur" | "velocity" | "waterfall" | "bungeecord")}
-                      className="select-custom w-full"
-                    >
-                      <option value="paper">Paper (recommended)</option>
-                      <option value="purpur">Purpur</option>
-                      <option value="spigot">Spigot</option>
-                      <option value="vanilla">Vanilla</option>
-                      <option value="fabric">Fabric</option>
-                      <option value="forge">Forge</option>
-                      <option value="velocity">Velocity (proxy)</option>
-                      <option value="waterfall">Waterfall (proxy)</option>
-                      <option value="bungeecord">BungeeCord (proxy)</option>
-                    </select>
-                  </div>
-                  <div>
                     <label className="block mb-2 text-text-primary">Version</label>
                     <div className="flex items-center gap-2">
                       <select
-                        value={quickStartVersion || ""}
-                        onChange={(e) => setQuickStartVersion(e.target.value || null)}
+                        value={presetVersion || ""}
+                        onChange={(e) => setPresetVersion(e.target.value || null)}
                         className="select-custom flex-1"
-                        disabled={quickStartLoading || quickStartVersions.length === 0}
+                        disabled={presetLoading || presetVersions.length === 0}
                       >
-                        {quickStartVersions.length === 0 && (
-                          <option value="">Latest</option>
-                        )}
-                        {quickStartVersions.map((version) => (
-                          <option key={version} value={version}>
-                            {version}
-                          </option>
+                        {presetVersions.length === 0 && <option value="">Latest</option>}
+                        {presetVersions.map((v) => (
+                          <option key={v} value={v}>{v}</option>
                         ))}
                       </select>
-                      {quickStartLoading && (
-                        <span className="text-xs text-text-muted">Loading...</span>
-                      )}
+                      {presetLoading && <span className="text-xs text-text-muted">Loading...</span>}
                     </div>
                   </div>
                   <div>
-                    <label className="block mb-2 text-text-primary">Starter Server RAM: {quickStartRAM} GB</label>
+                    <label className="block mb-2 text-text-primary">Server RAM: {presetRAM} GB</label>
                     <div className="flex items-center gap-4 relative">
                       <div className="flex-1 relative h-2">
-                        <div 
+                        <div
                           className="absolute inset-y-0 left-0 h-2 bg-accent rounded-l-lg pointer-events-none"
-                          style={{ 
-                            width: `min(calc(${(quickStartRAM / maxRAM) * 100}% - 9px), calc(100% - 18px))`, 
-                            zIndex: 1
-                          }}
-                        ></div>
+                          style={{ width: `min(calc(${(presetRAM / maxRAM) * 100}% - 9px), calc(100% - 18px))`, zIndex: 1 }}
+                        />
                         <input
                           type="range"
                           min="1"
                           max={maxRAM}
-                          value={quickStartRAM}
+                          value={presetRAM}
                           onChange={(e) => {
-                            setQuickStartRAM(parseInt(e.target.value));
-                            setQuickStartRamTouched(true);
+                            setPresetRAM(parseInt(e.target.value));
+                            setPresetRamTouched(true);
                           }}
                           className="absolute inset-0 w-full h-2 appearance-none cursor-pointer slider-custom bg-transparent"
                           style={{ zIndex: 5 }}
@@ -611,14 +614,14 @@ export default function SetupOptionsView({
                       <p className="text-xs text-text-muted">Launch immediately with the RAM set above</p>
                     </div>
                     <ToggleSwitch
-                      checked={quickStartStartNow}
-                      onChange={(checked) => setQuickStartStartNow(checked)}
+                      checked={presetStartNow}
+                      onChange={(checked) => setPresetStartNow(checked)}
                       ariaLabel="Start server after setup"
                     />
                   </div>
-                  {quickStartError && (
+                  {presetError && (
                     <div className="text-xs text-red-400 border border-red-500/30 bg-red-500/10 px-3 py-2 rounded">
-                      {quickStartError}
+                      {presetError}
                     </div>
                   )}
                 </div>

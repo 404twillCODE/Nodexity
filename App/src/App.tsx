@@ -336,7 +336,7 @@ function App() {
                       collapsed={appSettings?.sidebarCollapsed ?? false}
                       onCollapsedChange={(collapsed) => {
                         setAppSettings((prev) => ({ ...prev, sidebarCollapsed: collapsed }));
-                        window.electronAPI?.server?.saveAppSettings?.({ ...appSettings, sidebarCollapsed: collapsed });
+                        window.electronAPI?.server?.saveAppSettings?.({ sidebarCollapsed: collapsed });
                       }}
                     />
                   )}

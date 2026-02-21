@@ -47,7 +47,7 @@ export default function Sidebar({ currentView, onViewChange, collapsed: controll
       className="shrink-0 border-r border-border bg-background-secondary h-full flex flex-col overflow-hidden"
     >
       <nav className="flex-1 p-2 pt-4 space-y-0.5">
-        {menuItems.map((item, index) => (
+        {menuItems.map((item) => (
           <motion.button
             key={item.id}
             initial={false}

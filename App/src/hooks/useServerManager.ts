@@ -88,7 +88,14 @@ declare global {
         deletePlugin: (serverName: string, pluginName: string) => Promise<{ success: boolean; error?: string }>;
         checkJarSupportsPlugins: (serverName: string) => Promise<{ supportsPlugins: boolean }>;
         getModrinthPlugins: (minecraftVersion: string | null, limit?: number) => Promise<Array<{ id: string; name: string; slug: string; [key: string]: unknown }>>;
+        installEssentialsXFromGitHub: (serverName: string) => Promise<{ success: boolean; error?: string }>;
         installModrinthPlugin: (serverName: string, projectId: string, minecraftVersion: string) => Promise<{ success: boolean; error?: string }>;
+        listMods: (serverName: string) => Promise<{ success: boolean; mods?: Array<{ name: string; size: number; modified: string }>; supportsMods?: boolean; error?: string }>;
+        deleteMod: (serverName: string, modName: string) => Promise<{ success: boolean; error?: string }>;
+        checkJarSupportsMods: (serverName: string) => Promise<{ supportsMods: boolean }>;
+        getModrinthMods: (minecraftVersion: string | null, loader: string, limit?: number) => Promise<Array<{ project_id: string; title: string; slug: string; [key: string]: unknown }>>;
+        installModrinthMod: (serverName: string, projectId: string, minecraftVersion: string) => Promise<{ success: boolean; error?: string }>;
+        installGeyserFloodgate: (serverName: string, serverPort?: number) => Promise<{ success: boolean; error?: string }>;
         getServerConfig: (serverName: string) => Promise<{ version?: string; path?: string; [key: string]: unknown } | null>;
         listWorlds: (serverName: string) => Promise<{ success: boolean; worlds?: Array<{ name: string; size: number; modified: string }>; error?: string }>;
         deleteWorld: (serverName: string, worldName: string) => Promise<{ success: boolean; error?: string }>;
@@ -132,6 +139,8 @@ export function useServerManager() {
   const [refreshMs, setRefreshMs] = useState(2000);
   const prevServersRef = useRef<Server[]>([]);
   const userStopRef = useRef<Map<string, number>>(new Map());
+  const lastNotifyRef = useRef<Map<string, number>>(new Map());
+  const NOTIFY_COOLDOWN_MS = 45000; // Don't re-notify same server for 45 seconds
 
   const markUserStop = (serverName: string) => {
     userStopRef.current.set(serverName, Date.now());
@@ -145,8 +154,13 @@ export function useServerManager() {
     return false;
   };
 
-  const notifyIfAllowed = useCallback((title: string, body: string, type: 'success' | 'error' | 'info' = 'info') => {
+  const notifyIfAllowed = useCallback((serverId: string, title: string, body: string, type: 'success' | 'error' | 'info' = 'info') => {
     if (!appSettings?.notifications) return;
+    const key = `${serverId}:${title}`;
+    const now = Date.now();
+    const last = lastNotifyRef.current.get(key);
+    if (last && now - last < NOTIFY_COOLDOWN_MS) return;
+    lastNotifyRef.current.set(key, now);
     notify({ type, title, message: body });
   }, [appSettings?.notifications, notify]);
 
@@ -212,17 +226,15 @@ export function useServerManager() {
           const prevServer = prevServersRef.current.find((item) => item.id === nextServer.id);
           if (!prevServer || prevServer.status === nextServer.status) return;
 
-          if (appSettings.notifications?.statusChanges !== false) {
-            if (nextServer.status === 'RUNNING') {
-              notifyIfAllowed('Server started', `${nextServer.name} is now running.`, 'success');
-            } else if (nextServer.status === 'STOPPED') {
-              notifyIfAllowed('Server stopped', `${nextServer.name} has stopped.`, 'info');
-            }
-          }
+          const isCrash = prevServer.status === 'RUNNING' && nextServer.status === 'STOPPED' && !wasUserStop(nextServer.id);
 
-          if (appSettings.notifications?.crashes && prevServer.status === 'RUNNING' && nextServer.status === 'STOPPED') {
-            if (!wasUserStop(nextServer.id)) {
-              notifyIfAllowed('Server crash detected', `${nextServer.name} stopped unexpectedly.`, 'error');
+          if (isCrash && appSettings.notifications?.crashes) {
+            notifyIfAllowed(nextServer.id, 'Server crash detected', `${nextServer.name} stopped unexpectedly.`, 'error');
+          } else if (appSettings.notifications?.statusChanges !== false) {
+            if (nextServer.status === 'RUNNING') {
+              notifyIfAllowed(nextServer.id, 'Server started', `${nextServer.name} is now running.`, 'success');
+            } else if (nextServer.status === 'STOPPED') {
+              notifyIfAllowed(nextServer.id, 'Server stopped', `${nextServer.name} has stopped.`, 'info');
             }
           }
         });

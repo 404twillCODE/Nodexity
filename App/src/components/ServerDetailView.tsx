@@ -6,6 +6,7 @@ import { useToast } from "./ToastProvider";
 import StatusBadge from "./StatusBadge";
 import FileEditor from "./FileEditor";
 import PluginManager from "./PluginManager";
+import ModManager from "./ModManager";
 import WorldManager from "./WorldManager";
 import ServerPropertiesEditor from "./ServerPropertiesEditor";
 import { lineHasServerTimestamp } from "../utils/consoleUtils";
@@ -15,7 +16,7 @@ interface ServerDetailViewProps {
   onBack: () => void;
 }
 
-type Tab = "dashboard" | "console" | "files" | "plugins" | "worlds" | "properties" | "settings";
+type Tab = "dashboard" | "console" | "files" | "plugins" | "mods" | "worlds" | "properties" | "settings";
 
 interface ConsoleLine {
   id: string;
@@ -145,9 +146,11 @@ export default function ServerDetailView({ serverName, onBack }: ServerDetailVie
   const [commandSuggestions, setCommandSuggestions] = useState<string[]>([]);
   const [chatMode, setChatMode] = useState(false);
   const [supportsPlugins, setSupportsPlugins] = useState<boolean | null>(null);
+  const [supportsMods, setSupportsMods] = useState<boolean | null>(null);
   const [systemInfo, setSystemInfo] = useState<{ cpu: { tempCelsius?: number | null }; memory: { totalGB: number; freeGB: number; usedGB: number }; localAddress?: string | null } | null>(null);
   const [playerCount, setPlayerCount] = useState<{ online: number; max: number } | null>(null);
   const [usageHistory, setUsageHistory] = useState<{ timestamps: number[]; cpu: number[]; ramMB: number[] }>({ timestamps: [], cpu: [], ramMB: [] });
+  const [playerCountHistory, setPlayerCountHistory] = useState<{ timestamps: number[]; values: number[] }>({ timestamps: [], values: [] });
   const [graphRange, setGraphRange] = useState<(typeof GRAPH_RANGE_OPTIONS)[number]['id']>('5m');
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -161,28 +164,36 @@ export default function ServerDetailView({ serverName, onBack }: ServerDetailVie
   useEffect(() => {
     const checkPluginSupport = async () => {
       if (!window.electronAPI || !window.electronAPI.server) return;
-      
-      // Check if function exists (defensive check for hot reload scenarios)
       if (typeof window.electronAPI.server.checkJarSupportsPlugins !== 'function') {
-        console.warn('checkJarSupportsPlugins not available yet, defaulting to false');
         setSupportsPlugins(false);
         return;
       }
-      
       try {
         const result = await window.electronAPI.server.checkJarSupportsPlugins(serverName);
         const supports = result?.supportsPlugins ?? false;
         setSupportsPlugins(supports);
-        // If plugins tab is active but server doesn't support plugins, switch to console
-        if (!supports && activeTab === 'plugins') {
-          setActiveTab('console');
-        }
+        if (!supports && activeTab === 'plugins') setActiveTab('console');
       } catch (error) {
-        console.error('Failed to check plugin support:', error);
         setSupportsPlugins(false);
       }
     };
     checkPluginSupport();
+  }, [serverName, activeTab]);
+
+  // Check if server supports mods (Fabric/Forge)
+  useEffect(() => {
+    const checkModSupport = async () => {
+      if (!window.electronAPI?.server?.checkJarSupportsMods) return;
+      try {
+        const result = await window.electronAPI.server.checkJarSupportsMods(serverName);
+        const supports = result?.supportsMods ?? false;
+        setSupportsMods(supports);
+        if (!supports && activeTab === 'mods') setActiveTab('console');
+      } catch {
+        setSupportsMods(false);
+      }
+    };
+    checkModSupport();
   }, [serverName, activeTab]);
   
   // Define status variables early so they can be used in useEffect hooks
@@ -218,8 +229,18 @@ export default function ServerDetailView({ serverName, onBack }: ServerDetailVie
         ]);
         if (!cancelled && info) setSystemInfo(info);
         if (!cancelled && players && players.success && 'online' in players && typeof players.online === 'number') {
-          setPlayerCount({ online: players.online, max: (players.max ?? 0) });
-        } else if (!cancelled && !isRunning) setPlayerCount(null);
+          const online = players.online;
+          const max = players.max ?? 0;
+          setPlayerCount({ online, max });
+          setPlayerCountHistory((prev) => {
+            const maxLen = 3600;
+            const ts = [...(prev.timestamps ?? []), Date.now()].slice(-maxLen);
+            const vals = [...(prev.values ?? []), online].slice(-maxLen);
+            return { timestamps: ts, values: vals };
+          });
+        } else if (!cancelled && !isRunning) {
+          setPlayerCount(null);
+        }
       } catch (e) {
         if (!cancelled) setSystemInfo(null);
       }
@@ -826,9 +847,10 @@ export default function ServerDetailView({ serverName, onBack }: ServerDetailVie
 
       {/* Tabs */}
       <div className="flex gap-2 px-4 sm:px-6 pt-3 sm:pt-4 border-b border-border bg-background-secondary overflow-x-auto min-w-0 shrink-0">
-        {(['dashboard', 'console', 'files', 'plugins', 'worlds', 'properties', 'settings'] as Tab[])
+        {(['dashboard', 'console', 'files', 'plugins', 'mods', 'worlds', 'properties', 'settings'] as Tab[])
           .filter(tab => {
             if (tab === 'plugins' && supportsPlugins === false) return false;
+            if (tab === 'mods' && supportsMods === false) return false;
             return true;
           })
           .map((tab) => (
@@ -845,6 +867,7 @@ export default function ServerDetailView({ serverName, onBack }: ServerDetailVie
              tab === 'console' ? 'CONSOLE' :
              tab === 'files' ? 'FILES' :
              tab === 'plugins' ? 'PLUGINS' :
+             tab === 'mods' ? 'MODS' :
              tab === 'worlds' ? 'WORLDS' :
              tab === 'properties' ? 'PROPERTIES' : 'SETTINGS'}
           </button>
@@ -877,7 +900,7 @@ export default function ServerDetailView({ serverName, onBack }: ServerDetailVie
                 <div className="flex-1 min-h-0 flex items-center justify-center border border-border rounded-lg bg-background-secondary">
                   <div className="text-center">
                     <p className="text-text-muted font-mono text-sm uppercase tracking-wider">Server not running</p>
-                    <p className="text-text-muted/70 font-mono text-xs mt-1">Start the server to see CPU and RAM graphs</p>
+                    <p className="text-text-muted/70 font-mono text-xs mt-1">Start the server to see CPU, RAM, and player graphs</p>
                   </div>
                 </div>
               ) : (
@@ -924,6 +947,28 @@ export default function ServerDetailView({ serverName, onBack }: ServerDetailVie
                       label="RAM (MB)"
                       formatTick={(v) => `${Math.round(v)}`}
                       currentValue={serverUsage ? `${Math.round(serverUsage.ramMB)} MB` : undefined}
+                    />
+                  </div>
+                  <div className="flex-1 min-h-0 min-w-0 overflow-hidden">
+                    <DashboardAreaGraph
+                      values={(() => {
+                        const rangeOpt = GRAPH_RANGE_OPTIONS.find((o) => o.id === graphRange);
+                        const windowMs = (rangeOpt?.durationSeconds ?? 300) * 1000;
+                        const cutoff = Date.now() - windowMs;
+                        const indices = (playerCountHistory.timestamps ?? []).map((t, i) => (t >= cutoff ? i : -1)).filter((i) => i >= 0);
+                        return indices.map((i) => (playerCountHistory.values ?? [])[i] ?? 0);
+                      })()}
+                      timestamps={(() => {
+                        const rangeOpt = GRAPH_RANGE_OPTIONS.find((o) => o.id === graphRange);
+                        const windowMs = (rangeOpt?.durationSeconds ?? 300) * 1000;
+                        const cutoff = Date.now() - windowMs;
+                        return (playerCountHistory.timestamps ?? []).filter((t) => t >= cutoff);
+                      })()}
+                      timeRangeSeconds={GRAPH_RANGE_OPTIONS.find((o) => o.id === graphRange)?.durationSeconds ?? 300}
+                      max={Math.max(playerCount?.max ?? 20, 1)}
+                      label="Players"
+                      formatTick={(v) => `${Math.round(v)}`}
+                      currentValue={playerCount != null ? `${playerCount.online} / ${playerCount.max}` : undefined}
                     />
                   </div>
                 </>
@@ -1388,6 +1433,10 @@ export default function ServerDetailView({ serverName, onBack }: ServerDetailVie
 
         {activeTab === "plugins" && (
           <PluginManager serverName={serverName} />
+        )}
+
+        {activeTab === "mods" && (
+          <ModManager serverName={serverName} />
         )}
 
         {activeTab === "worlds" && (

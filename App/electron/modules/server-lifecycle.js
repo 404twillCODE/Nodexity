@@ -12,6 +12,8 @@ const downloads = require('./downloads');
 
 const serverProcesses = new Map();
 const cpuUsageTracking = new Map();
+const playerCountFromStream = new Map();
+const serverOutputBuffer = new Map();
 
 async function isPortAvailable(port) {
   return new Promise((resolve) => {
@@ -328,7 +330,8 @@ async function createServer(serverName = 'default', serverType = 'paper', versio
       ramGB: serverRAM,
       status: 'STOPPED',
       port: serverPort,
-      displayName: displayName || serverName // Store display name if provided
+      displayName: displayName || serverName, // Store display name if provided
+      jarFile // Store jar path for Fabric (may be in .fabric/server/)
     });
 
     return { success: true, path: serverPath, jarFile, version: selectedVersion, build };
@@ -352,16 +355,21 @@ async function startServer(serverName, ramGB = null) {
       return { success: false, error: 'Server directory not found. Please create the server first.' };
     }
     
-    // Check if server exists
-    const files = await fs.readdir(serverPath);
-    const jarFile = files.find(f => f.endsWith('.jar'));
-    
+    // Find server jar - use config jarFile (Fabric may be in .fabric/server/), else scan root
+    const serverConfig = await config.getServerConfig(serverName);
+    let jarFile = serverConfig?.jarFile;
     if (!jarFile) {
+      const files = await fs.readdir(serverPath);
+      jarFile = files.find(f => f.endsWith('.jar') && !f.toLowerCase().includes('fabric-installer'));
+    }
+    const jarPath = path.isAbsolute(jarFile) ? jarFile : path.join(serverPath, jarFile);
+    try {
+      await fs.access(jarPath);
+    } catch {
       return { success: false, error: 'Server jar not found. Please create the server first.' };
     }
 
     // Check if already running
-    const serverConfig = await config.getServerConfig(serverName);
     if (serverConfig?.pid && isPidAlive(serverConfig.pid)) {
       return { success: false, error: 'Server is already running' };
     }
@@ -374,6 +382,7 @@ async function startServer(serverName, ramGB = null) {
       } else {
         // Process is dead, remove it
         serverProcesses.delete(serverName);
+        clearPlayerCountStream(serverName);
       }
     }
 
@@ -390,8 +399,9 @@ async function startServer(serverName, ramGB = null) {
       ramGB: serverRAM
     });
 
-    const jarPath = path.join(serverPath, jarFile);
     const ramMB = serverRAM * 1024;
+    // Fabric jar in .fabric/server/ must run with cwd = that directory for classpath
+    const runCwd = path.dirname(jarPath);
     
     const javaProcess = spawn('java', [
       `-Xms${ramMB}M`,
@@ -400,7 +410,7 @@ async function startServer(serverName, ramGB = null) {
       jarPath,
       'nogui'
     ], {
-      cwd: serverPath,
+      cwd: runCwd,
       stdio: ['pipe', 'pipe', 'pipe']
     });
 
@@ -409,7 +419,8 @@ async function startServer(serverName, ramGB = null) {
     // Handle process events
     javaProcess.on('exit', async (code) => {
       serverProcesses.delete(serverName);
-      cpuUsageTracking.delete(serverName); // Clean up CPU tracking
+      cpuUsageTracking.delete(serverName);
+      clearPlayerCountStream(serverName);
       const currentConfig = await config.getServerConfig(serverName);
       if (currentConfig) {
         await config.saveServerConfig(serverName, {
@@ -422,7 +433,8 @@ async function startServer(serverName, ramGB = null) {
 
     javaProcess.on('error', async (error) => {
       serverProcesses.delete(serverName);
-      cpuUsageTracking.delete(serverName); // Clean up CPU tracking
+      cpuUsageTracking.delete(serverName);
+      clearPlayerCountStream(serverName);
       const currentConfig = await config.getServerConfig(serverName);
       if (currentConfig) {
         await config.saveServerConfig(serverName, {
@@ -505,6 +517,7 @@ async function stopServer(serverName) {
 
     serverProcesses.delete(serverName);
     cpuUsageTracking.delete(serverName);
+    clearPlayerCountStream(serverName);
 
     const serverConfig = await config.getServerConfig(serverName);
     if (serverConfig) {
@@ -536,6 +549,7 @@ async function deleteServer(serverName) {
         process.kill('SIGKILL');
       }
       serverProcesses.delete(serverName);
+      clearPlayerCountStream(serverName);
     }
 
     // Get server directory
@@ -611,7 +625,8 @@ async function killServer(serverName) {
     killProcessTree(process.pid);
     await waitForProcessExit(process, 5000);
     serverProcesses.delete(serverName);
-    cpuUsageTracking.delete(serverName); // Clean up CPU tracking
+    cpuUsageTracking.delete(serverName);
+    clearPlayerCountStream(serverName);
 
     // Update status
     const serverConfig = await config.getServerConfig(serverName);
@@ -652,7 +667,63 @@ async function getServerLogs(serverName, maxLines = 1000) {
   }
 }
 
-// Get player count from server logs (simple parsing)
+// Read max-players from server.properties
+async function getMaxPlayersFromProps(serverPath) {
+  try {
+    const propsPath = path.join(serverPath, 'server.properties');
+    const propsContent = await fs.readFile(propsPath, 'utf8');
+    const maxMatch = propsContent.match(/max-players=(\d+)/i);
+    return maxMatch ? parseInt(maxMatch[1]) : 20;
+  } catch {
+    return 20;
+  }
+}
+
+// Strip ANSI escape codes and Minecraft § formatting so regex can match
+function stripFormatting(s) {
+  if (typeof s !== 'string') return '';
+  return s
+    .replace(/\x1b\[[0-9;]*m/g, '')
+    .replace(/\u001b\[[0-9;]*m/g, '')
+    .replace(/§./g, '')
+    .trim();
+}
+
+// Parse a line of server output for "There are X of a max of Y players online"
+function parsePlayerCountLine(line) {
+  const raw = stripFormatting(line);
+  const m1 = raw.match(/There are (\d+) of a max of (\d+) players? online/i);
+  if (m1) return { online: parseInt(m1[1]), max: parseInt(m1[2]) };
+  const m2 = raw.match(/(\d+) of a max of (\d+) players? online/i);
+  if (m2) return { online: parseInt(m2[1]), max: parseInt(m2[2]) };
+  const m3 = raw.match(/(\d+)\s*\/\s*(\d+)\s*players? online/i);
+  if (m3) return { online: parseInt(m3[1]), max: parseInt(m3[2]) };
+  const m4 = raw.match(/players? online[:\s]*(\d+)\s*\/\s*(\d+)/i);
+  if (m4) return { online: parseInt(m4[1]), max: parseInt(m4[2]) };
+  return null;
+}
+
+// Feed server stdout/stderr (same stream as console). Updates player count when we see the list response.
+function feedServerOutput(serverName, data) {
+  if (!serverName || typeof data !== 'string') return;
+  let buf = serverOutputBuffer.get(serverName) || '';
+  buf += data;
+  const lines = buf.split(/\r?\n/);
+  serverOutputBuffer.set(serverName, lines.pop() ?? '');
+  for (const line of lines) {
+    const parsed = parsePlayerCountLine(line);
+    if (parsed) {
+      playerCountFromStream.set(serverName, { online: parsed.online, max: parsed.max });
+    }
+  }
+}
+
+function clearPlayerCountStream(serverName) {
+  playerCountFromStream.delete(serverName);
+  serverOutputBuffer.delete(serverName);
+}
+
+// Get player count: send "list", then read from stream cache or fallback to latest.log (server often writes list output to log only).
 async function getPlayerCount(serverName) {
   try {
     const settings = await config.getAppSettings();
@@ -660,42 +731,38 @@ async function getPlayerCount(serverName) {
     const serverPath = path.join(serversDir, serverName);
     const logPath = path.join(serverPath, 'logs', 'latest.log');
 
-    // Check if server is running
+    const maxFromProps = await getMaxPlayersFromProps(serverPath);
+
     if (!serverProcesses.has(serverName)) {
-      return { success: true, online: 0, max: 0 };
+      return { success: true, online: 0, max: maxFromProps };
+    }
+
+    const process = serverProcesses.get(serverName);
+    if (process && process.stdin && process.stdin.writable) {
+      process.stdin.write('list\n');
+      await new Promise((r) => setTimeout(r, 1200));
+    }
+
+    const cached = playerCountFromStream.get(serverName);
+    if (cached) {
+      return { success: true, online: cached.online, max: cached.max };
     }
 
     try {
       const logContent = await fs.readFile(logPath, 'utf8');
-      const lines = logContent.split('\n').reverse().slice(0, 100); // Check last 100 lines
-      
-      // Look for player count in logs (format: "There are X of a max of Y players online")
-      for (const line of lines) {
-        const match = line.match(/There are (\d+) of a max of (\d+) players online/i);
-        if (match) {
-          return { success: true, online: parseInt(match[1]), max: parseInt(match[2]) };
-        }
-        // Also check for "players online:" format
-        const match2 = line.match(/(\d+) players? online/i);
-        if (match2) {
-          // Try to find max players from server.properties
-          let maxPlayers = 20;
-          try {
-            const propsPath = path.join(serverPath, 'server.properties');
-            const propsContent = await fs.readFile(propsPath, 'utf8');
-            const maxMatch = propsContent.match(/max-players=(\d+)/i);
-            if (maxMatch) {
-              maxPlayers = parseInt(maxMatch[1]);
-            }
-          } catch {}
-          return { success: true, online: parseInt(match2[1]), max: maxPlayers };
+      const lines = logContent.split(/\r?\n/).filter((l) => l.trim());
+      const start = Math.max(0, lines.length - 30);
+      for (let i = lines.length - 1; i >= start; i--) {
+        const parsed = parsePlayerCountLine(lines[i]);
+        if (parsed) {
+          return { success: true, online: parsed.online, max: parsed.max };
         }
       }
     } catch (err) {
-      // Log file might not exist yet
+      // Log file missing or unreadable
     }
 
-    return { success: true, online: 0, max: 0 };
+    return { success: true, online: 0, max: maxFromProps };
   } catch (error) {
     return { success: false, error: error.message };
   }
@@ -737,6 +804,7 @@ async function listServers() {
               // Process is dead, remove it and update config
               serverProcesses.delete(serverName);
               cpuUsageTracking.delete(serverName);
+              clearPlayerCountStream(serverName);
               status = 'STOPPED';
               // Update config to reflect actual status
               if (serverConfig) {
@@ -803,7 +871,7 @@ async function listServers() {
           
           serverList.push({
             id: serverName,
-            name: serverName,
+            name: serverConfig?.name || serverConfig?.displayName || serverName,
             version,
             status: status, // Keep status as RUNNING, STOPPED, or STARTING
             port: serverConfig?.port || 25565,
@@ -937,5 +1005,6 @@ module.exports = {
   updateServerRAM,
   getServerLogs,
   getPlayerCount,
+  feedServerOutput,
   importServer,
 };

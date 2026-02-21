@@ -12,16 +12,20 @@ interface ServerListProps {
 
 const AggregateStatsPanel = memo(function AggregateStatsPanel({
   hasServers,
+  servers,
   getAllServersUsage,
   getServersDiskUsage,
+  getPlayerCount,
   getSystemContext,
   isScrollingRef,
   refreshMs,
   onReady,
 }: {
   hasServers: boolean;
+  servers: Array<{ id: string; status: string }>;
   getAllServersUsage: () => Promise<{ success: boolean; totalCPU?: number; totalRAM?: number; totalRAMMB?: number }>;
   getServersDiskUsage: () => Promise<{ success: boolean; totalSizeGB?: number }>;
+  getPlayerCount: (serverName: string) => Promise<{ success: boolean; online?: number; max?: number }>;
   getSystemContext: () => Promise<{
     memory?: { totalGB: number; freeGB: number };
     drives?: Array<{ letter: string; totalGB: number; usedGB: number }>;
@@ -36,12 +40,14 @@ const AggregateStatsPanel = memo(function AggregateStatsPanel({
     totalRAM: number;
     totalRAMMB: number;
     totalDiskGB: number;
+    totalPlayersOnline: number;
+    totalPlayersMax: number;
   } | null>(null);
   const [diskUsageGB, setDiskUsageGB] = useState<number>(0);
   const [diskTotalGB, setDiskTotalGB] = useState<number>(0);
   const [diskUsedGB, setDiskUsedGB] = useState<number>(0);
   const [systemAvailableRAMMB, setSystemAvailableRAMMB] = useState<number>(0);
-  const lastStatsRef = useRef<{ cpu: number; ramMB: number; diskGB: number } | null>(null);
+  const lastStatsRef = useRef<{ cpu: number; ramMB: number; diskGB: number; playersOnline: number; playersMax: number } | null>(null);
   const usageIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const diskIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -54,25 +60,45 @@ const AggregateStatsPanel = memo(function AggregateStatsPanel({
     const loadUsageStats = async () => {
       if (isScrollingRef.current) return;
       try {
-        const usageResult = await getAllServersUsage();
+        const running = servers.filter((s) => s.status === "RUNNING");
+        const [usageResult, ...playerResults] = await Promise.all([
+          getAllServersUsage(),
+          ...running.map((server) => getPlayerCount(server.id)),
+        ]);
         if (usageResult.success) {
+          let totalPlayersOnline = 0;
+          let totalPlayersMax = 0;
+          for (let i = 0; i < running.length; i++) {
+            const res = playerResults[i];
+            if (res?.success && typeof res.online === "number") {
+              totalPlayersOnline += res.online;
+              totalPlayersMax += res.max ?? 0;
+            }
+          }
           const nextStats = {
             totalCPU: usageResult.totalCPU || 0,
             totalRAM: usageResult.totalRAM || 0,
             totalRAMMB: usageResult.totalRAMMB || 0,
-            totalDiskGB: diskUsageGB || 0
+            totalDiskGB: diskUsageGB || 0,
+            totalPlayersOnline,
+            totalPlayersMax,
           };
 
           const last = lastStatsRef.current;
           const cpuDiff = Math.abs((last?.cpu ?? 0) - nextStats.totalCPU);
           const ramDiff = Math.abs((last?.ramMB ?? 0) - nextStats.totalRAMMB);
           const diskDiff = Math.abs((last?.diskGB ?? 0) - nextStats.totalDiskGB);
+          const playersChanged =
+            (last?.playersOnline ?? -1) !== nextStats.totalPlayersOnline ||
+            (last?.playersMax ?? -1) !== nextStats.totalPlayersMax;
 
-          if (!last || cpuDiff > 0.5 || ramDiff > 10 || diskDiff > 0.01) {
+          if (!last || cpuDiff > 0.5 || ramDiff > 10 || diskDiff > 0.01 || playersChanged) {
             lastStatsRef.current = {
               cpu: nextStats.totalCPU,
               ramMB: nextStats.totalRAMMB,
-              diskGB: nextStats.totalDiskGB
+              diskGB: nextStats.totalDiskGB,
+              playersOnline: nextStats.totalPlayersOnline,
+              playersMax: nextStats.totalPlayersMax,
             };
             requestAnimationFrame(() => {
               setAggregateStats(nextStats);
@@ -81,7 +107,7 @@ const AggregateStatsPanel = memo(function AggregateStatsPanel({
           }
         }
       } catch (error) {
-        console.error('Failed to load aggregate stats:', error);
+        console.error("Failed to load aggregate stats:", error);
       }
     };
 
@@ -136,7 +162,7 @@ const AggregateStatsPanel = memo(function AggregateStatsPanel({
       if (usageIntervalRef.current) clearInterval(usageIntervalRef.current);
       if (diskIntervalRef.current) clearInterval(diskIntervalRef.current);
     };
-  }, [hasServers, getAllServersUsage, getServersDiskUsage, getSystemContext, diskUsageGB, isScrollingRef]);
+  }, [hasServers, servers, getAllServersUsage, getServersDiskUsage, getPlayerCount, getSystemContext, diskUsageGB, isScrollingRef]);
 
   if (!aggregateStats) return null;
 
@@ -146,7 +172,7 @@ const AggregateStatsPanel = memo(function AggregateStatsPanel({
       animate={{ opacity: 1, y: 0 }}
       className="border border-border bg-background-secondary/40 rounded p-6 mb-6"
     >
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <div className="rounded border border-border bg-background-secondary/60 px-5 py-4">
           <div className="flex items-center gap-2 text-xs text-text-muted font-mono uppercase tracking-wider mb-2">
             <svg className="h-4 w-4 text-accent" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
@@ -205,13 +231,32 @@ const AggregateStatsPanel = memo(function AggregateStatsPanel({
             />
           </div>
         </div>
+        <div className="rounded border border-border bg-background-secondary/60 px-5 py-4">
+          <div className="flex items-center gap-2 text-xs text-text-muted font-mono uppercase tracking-wider mb-2">
+            <svg className="h-4 w-4 text-accent" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+              <circle cx="9" cy="7" r="4" />
+              <path strokeLinecap="round" strokeLinejoin="round" d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" />
+            </svg>
+            Players
+          </div>
+          <div className="text-2xl font-semibold text-text-primary font-mono">
+            {aggregateStats.totalPlayersOnline} / {aggregateStats.totalPlayersMax}
+          </div>
+          <div className="mt-3 h-1.5 w-full rounded-full bg-background-secondary">
+            <div
+              className="h-full rounded-full bg-accent transition-all"
+              style={{ width: `${aggregateStats.totalPlayersMax ? Math.min(100, (aggregateStats.totalPlayersOnline / aggregateStats.totalPlayersMax) * 100) : 0}%` }}
+            />
+          </div>
+        </div>
       </div>
     </motion.div>
   );
 });
 
 export default function ServerList({ onServerClick }: ServerListProps) {
-  const { servers, startServer, stopServer, loading, getAllServersUsage, getServersDiskUsage } = useServerManager();
+  const { servers, startServer, stopServer, loading, getAllServersUsage, getServersDiskUsage, getPlayerCount } = useServerManager();
   const getSystemContext = async () => {
     if (!window.electronAPI) return {};
     const [info, settings] = await Promise.all([
@@ -336,8 +381,10 @@ export default function ServerList({ onServerClick }: ServerListProps) {
       {!loading && servers.length > 0 && (
         <AggregateStatsPanel
           hasServers={servers.length > 0}
+          servers={servers}
           getAllServersUsage={getAllServersUsage}
           getServersDiskUsage={getServersDiskUsage}
+          getPlayerCount={getPlayerCount}
           getSystemContext={getSystemContext}
           isScrollingRef={isScrollingRef}
           refreshMs={refreshMs}

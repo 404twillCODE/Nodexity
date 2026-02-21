@@ -381,34 +381,96 @@ async function getModrinthPlugins(minecraftVersion = null, limit = 200) {
 
 // Get latest version of a Modrinth plugin for a specific Minecraft version
 async function getModrinthPluginVersion(projectId, minecraftVersion) {
-  return new Promise((resolve, reject) => {
-    // Modrinth API expects URL-encoded arrays
-    const gameVersions = encodeURIComponent(JSON.stringify([minecraftVersion]));
-    const loaders = encodeURIComponent(JSON.stringify(['bukkit', 'spigot', 'paper', 'purpur']));
-    const url = `https://api.modrinth.com/v2/project/${projectId}/version?game_versions=${gameVersions}&loaders=${loaders}`;
-    
-    https.get(url, {
-      headers: {
-        'User-Agent': 'HexNode/1.0.0'
-      }
-    }, (res) => {
+  const loaders = encodeURIComponent(JSON.stringify(['bukkit', 'spigot', 'paper', 'purpur']));
+  const gameVersions = encodeURIComponent(JSON.stringify([minecraftVersion]));
+  const fetchVersions = (url) => new Promise((resolve, reject) => {
+    https.get(url, { headers: { 'User-Agent': 'Nodexity/1.0' } }, (res) => {
       let data = '';
       res.on('data', (chunk) => { data += chunk; });
       res.on('end', () => {
         try {
           const json = JSON.parse(data);
-          // Return the first (latest) version that matches
-          if (json && json.length > 0) {
-            resolve(json[0]);
-          } else {
-            reject(new Error('No compatible version found'));
-          }
+          resolve(Array.isArray(json) ? json : []);
         } catch (e) {
           reject(e);
         }
       });
     }).on('error', reject);
   });
+  const urlWithVersion = `https://api.modrinth.com/v2/project/${encodeURIComponent(projectId)}/version?game_versions=${gameVersions}&loaders=${loaders}`;
+  let versions = await fetchVersions(urlWithVersion);
+  if (versions.length === 0) {
+    const urlLatest = `https://api.modrinth.com/v2/project/${encodeURIComponent(projectId)}/version?loaders=${loaders}`;
+    versions = await fetchVersions(urlLatest);
+  }
+  if (versions.length === 0) {
+    throw new Error('No compatible version found');
+  }
+  return versions[0];
+}
+
+// Install EssentialsX from GitHub releases (not on Modrinth as plugin)
+async function installEssentialsXFromGitHub(serverName) {
+  try {
+    const supportsPlugins = await checkJarSupportsPlugins(serverName);
+    if (!supportsPlugins) {
+      return { success: false, error: 'This server type does not support plugins' };
+    }
+    const settings = await config.getAppSettings();
+    const serversDir = settings.serversDirectory || config.SERVERS_DIR;
+    const pluginsPath = path.join(serversDir, serverName, 'plugins');
+    await fs.mkdir(pluginsPath, { recursive: true });
+    const apiUrl = 'https://api.github.com/repos/EssentialsX/Essentials/releases/latest';
+    const releaseJson = await new Promise((resolve, reject) => {
+      const req = https.get(apiUrl, {
+        headers: { 'User-Agent': 'Nodexity/1.0' }
+      }, (res) => {
+        let data = '';
+        res.on('data', (chunk) => { data += chunk; });
+        res.on('end', () => {
+          try {
+            resolve(JSON.parse(data));
+          } catch (e) {
+            reject(e);
+          }
+        });
+      });
+      req.on('error', reject);
+    });
+    const assets = releaseJson.assets || [];
+    const mainJar = assets.find((a) => /^EssentialsX-\d+\.\d+\.\d+\.jar$/.test(a.name));
+    if (!mainJar || !mainJar.browser_download_url) {
+      return { success: false, error: 'EssentialsX main jar not found in latest release' };
+    }
+    const pluginPath = path.join(pluginsPath, mainJar.name);
+    const downloadUrl = mainJar.browser_download_url;
+    await new Promise((resolve, reject) => {
+      const file = fsSync.createWriteStream(pluginPath);
+      const onResponse = (res) => {
+        if (res.statusCode === 301 || res.statusCode === 302) {
+          https.get(res.headers.location, { headers: { 'User-Agent': 'Nodexity/1.0' } }, onResponse).on('error', reject);
+          return;
+        }
+        if (res.statusCode !== 200) {
+          file.close();
+          try { fsSync.unlinkSync(pluginPath); } catch (_) {}
+          reject(new Error(`Failed to download EssentialsX: HTTP ${res.statusCode}`));
+          return;
+        }
+        res.pipe(file);
+        file.on('finish', () => { file.close(); resolve(); });
+        file.on('error', (err) => { file.close(); reject(err); });
+      };
+      const req = https.get(downloadUrl, { headers: { 'User-Agent': 'Nodexity/1.0' } }, onResponse);
+      req.on('error', (err) => {
+        file.close();
+        reject(err);
+      });
+    });
+    return { success: true, filename: mainJar.name, path: pluginPath };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
 }
 
 // Install plugin from Modrinth
@@ -428,8 +490,19 @@ async function installModrinthPlugin(serverName, projectId, minecraftVersion) {
     // Ensure plugins directory exists
     await fs.mkdir(pluginsPath, { recursive: true });
 
-    // Get the latest compatible version
-    const version = await getModrinthPluginVersion(projectId, minecraftVersion);
+    // Get the latest compatible version (try slug first, then project id for known plugins)
+    const slugToId = { luckperms: 'Vebnzrzj', worldedit: '1u6JkXh5', chunky: 'fALzjamp' };
+    let version;
+    try {
+      version = await getModrinthPluginVersion(projectId, minecraftVersion);
+    } catch (e) {
+      const altId = slugToId[projectId.toLowerCase()];
+      if (altId && altId !== projectId) {
+        version = await getModrinthPluginVersion(altId, minecraftVersion);
+      } else {
+        throw e;
+      }
+    }
     
     if (!version || !version.files || version.files.length === 0) {
       return { success: false, error: 'No download file found for this plugin version' };
@@ -442,9 +515,10 @@ async function installModrinthPlugin(serverName, projectId, minecraftVersion) {
       return { success: false, error: 'No jar file found in plugin version' };
     }
 
-    // Download the plugin
+    // Download the plugin (use version.project_id for CDN in case we resolved by slug)
     const pluginPath = path.join(pluginsPath, jarFile.filename);
-    const downloadUrl = jarFile.url || `https://cdn.modrinth.com/data/${projectId}/versions/${version.id}/${jarFile.filename}`;
+    const cdnProjectId = version.project_id || projectId;
+    const downloadUrl = jarFile.url || `https://cdn.modrinth.com/data/${cdnProjectId}/versions/${version.id}/${jarFile.filename}`;
     
     await downloads.downloadFile(downloadUrl, pluginPath);
 
@@ -489,6 +563,226 @@ async function listPlugins(serverName) {
     }
     
     return { success: true, plugins, supportsPlugins: true };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+}
+
+// Check if a server supports mods (Fabric, Forge)
+async function checkJarSupportsMods(serverName) {
+  try {
+    const serverConfig = await config.getServerConfig(serverName);
+    if (serverConfig && serverConfig.serverType) {
+      const serverType = serverConfig.serverType.toLowerCase();
+      const modServers = ['fabric', 'forge'];
+      return { supportsMods: modServers.includes(serverType) };
+    }
+    // Fallback: check jar filename
+    const settings = await config.getAppSettings();
+    const serversDir = settings.serversDirectory || config.SERVERS_DIR;
+    const serverPath = path.join(serversDir, serverName);
+    const files = await fs.readdir(serverPath).catch(() => []);
+    const jarFile = files.find(f => f.endsWith('.jar'));
+    if (!jarFile) return { supportsMods: false };
+    const jarName = jarFile.toLowerCase();
+    const supportsMods = jarName.includes('forge') || jarName.includes('fabric');
+    return { supportsMods };
+  } catch {
+    return { supportsMods: false };
+  }
+}
+
+// List mods
+async function listMods(serverName) {
+  try {
+    const supportsMods = await checkJarSupportsMods(serverName);
+    if (!supportsMods.supportsMods) {
+      return { success: true, mods: [], supportsMods: false };
+    }
+    const settings = await config.getAppSettings();
+    const serversDir = settings.serversDirectory || config.SERVERS_DIR;
+    const modsPath = path.join(serversDir, serverName, 'mods');
+    try {
+      await fs.access(modsPath);
+    } catch {
+      return { success: true, mods: [], supportsMods: true };
+    }
+    const files = await fs.readdir(modsPath);
+    const mods = [];
+    for (const file of files) {
+      if (file.endsWith('.jar')) {
+        const filePath = path.join(modsPath, file);
+        const stat = await fs.stat(filePath);
+        mods.push({
+          name: file,
+          size: stat.size,
+          modified: stat.mtime.toISOString()
+        });
+      }
+    }
+    return { success: true, mods, supportsMods: true };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+}
+
+// Get mods from Modrinth API
+async function getModrinthMods(minecraftVersion = null, loader = 'fabric', limit = 200) {
+  return new Promise(async (resolve, reject) => {
+    try {
+      const facets = [['project_type:mod'], ['categories:' + loader]]; // loaders (fabric/forge) are in categories
+      if (minecraftVersion) {
+        facets.push(['versions:' + minecraftVersion]);
+      }
+      const facetsJson = encodeURIComponent(JSON.stringify(facets));
+      let allMods = [];
+      let offset = 0;
+      const pageSize = 100;
+      let hasMore = true;
+      while (hasMore) {
+        const url = `https://api.modrinth.com/v2/search?facets=${facetsJson}&limit=${pageSize}&offset=${offset}`;
+        const pageResults = await new Promise((pageResolve, pageReject) => {
+          https.get(url, {
+            headers: { 'User-Agent': 'HexNode/1.0.0' }
+          }, (res) => {
+            let data = '';
+            res.on('data', (chunk) => { data += chunk; });
+            res.on('end', () => {
+              try {
+                const json = JSON.parse(data);
+                pageResolve({ hits: json.hits || [], total: json.total_hits || 0 });
+              } catch (e) {
+                pageReject(e);
+              }
+            });
+          }).on('error', pageReject);
+        });
+        allMods = allMods.concat(pageResults.hits);
+        if (limit && allMods.length >= limit) {
+          allMods = allMods.slice(0, limit);
+          hasMore = false;
+        } else if (pageResults.hits.length < pageSize || allMods.length >= pageResults.total) {
+          hasMore = false;
+        } else {
+          offset += pageSize;
+        }
+      }
+      resolve(allMods);
+    } catch (error) {
+      reject(error);
+    }
+  });
+}
+
+// Get latest version of a Modrinth mod for a specific Minecraft version and loader
+async function getModrinthModVersion(projectId, minecraftVersion, loader) {
+  return new Promise((resolve, reject) => {
+    const gameVersions = encodeURIComponent(JSON.stringify([minecraftVersion]));
+    const loaders = encodeURIComponent(JSON.stringify([loader]));
+    const url = `https://api.modrinth.com/v2/project/${projectId}/version?game_versions=${gameVersions}&loaders=${loaders}`;
+    https.get(url, {
+      headers: { 'User-Agent': 'HexNode/1.0.0' }
+    }, (res) => {
+      let data = '';
+      res.on('data', (chunk) => { data += chunk; });
+      res.on('end', () => {
+        try {
+          const json = JSON.parse(data);
+          if (json && json.length > 0) {
+            resolve(json[0]);
+          } else {
+            reject(new Error('No compatible version found'));
+          }
+        } catch (e) {
+          reject(e);
+        }
+      });
+    }).on('error', reject);
+  });
+}
+
+// Install mod from Modrinth
+async function installModrinthMod(serverName, projectId, minecraftVersion) {
+  try {
+    const supportsMods = await checkJarSupportsMods(serverName);
+    if (!supportsMods.supportsMods) {
+      return { success: false, error: 'This server type does not support mods' };
+    }
+    const serverConfig = await config.getServerConfig(serverName);
+    const serverType = (serverConfig?.serverType || '').toLowerCase();
+    const loader = serverType === 'forge' ? 'forge' : 'fabric';
+    const settings = await config.getAppSettings();
+    const serversDir = settings.serversDirectory || config.SERVERS_DIR;
+    const modsPath = path.join(serversDir, serverName, 'mods');
+    await fs.mkdir(modsPath, { recursive: true });
+    const version = await getModrinthModVersion(projectId, minecraftVersion, loader);
+    if (!version || !version.files || version.files.length === 0) {
+      return { success: false, error: 'No download file found for this mod version' };
+    }
+    const jarFile = version.files.find(f => f.primary) || version.files.find(f => f.filename.endsWith('.jar')) || version.files[0];
+    if (!jarFile) {
+      return { success: false, error: 'No jar file found in mod version' };
+    }
+    const modPath = path.join(modsPath, jarFile.filename);
+    const downloadUrl = jarFile.url || `https://cdn.modrinth.com/data/${projectId}/versions/${version.id}/${jarFile.filename}`;
+    await downloads.downloadFile(downloadUrl, modPath);
+    return { success: true, filename: jarFile.filename, path: modPath };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+}
+
+// Delete mod
+async function deleteMod(serverName, modName) {
+  try {
+    const settings = await config.getAppSettings();
+    const serversDir = settings.serversDirectory || config.SERVERS_DIR;
+    const modPath = path.join(serversDir, serverName, 'mods', modName);
+    const normalizedPath = path.normalize(modPath);
+    const normalizedModsDir = path.normalize(path.join(serversDir, serverName, 'mods'));
+    if (!normalizedPath.startsWith(normalizedModsDir)) {
+      return { success: false, error: 'Invalid mod path' };
+    }
+    await fs.unlink(modPath);
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+}
+
+// Install Geyser and Floodgate for Java+Bedrock cross-play (from GeyserMC)
+async function installGeyserFloodgate(serverName, serverPort = 25565) {
+  try {
+    const supportsPlugins = await checkJarSupportsPlugins(serverName);
+    if (!supportsPlugins) {
+      return { success: false, error: 'Server does not support plugins' };
+    }
+    const settings = await config.getAppSettings();
+    const serversDir = settings.serversDirectory || config.SERVERS_DIR;
+    const pluginsPath = path.join(serversDir, serverName, 'plugins');
+    await fs.mkdir(pluginsPath, { recursive: true });
+    const geyserUrl = 'https://download.geysermc.org/v2/projects/geyser/versions/latest/builds/latest/downloads/spigot';
+    const floodgateUrl = 'https://download.geysermc.org/v2/projects/floodgate/versions/latest/builds/latest/downloads/spigot';
+    const geyserPath = path.join(pluginsPath, 'Geyser-Spigot.jar');
+    const floodgatePath = path.join(pluginsPath, 'floodgate-spigot.jar');
+    await downloads.downloadFile(geyserUrl, geyserPath);
+    await downloads.downloadFile(floodgateUrl, floodgatePath);
+    const geyserConfigDir = path.join(pluginsPath, 'Geyser-Spigot');
+    await fs.mkdir(geyserConfigDir, { recursive: true });
+    const geyserConfig = `# Geyser config - auto-generated for Floodgate
+# Bedrock players can join using the port below (default 19132)
+bedrock:
+  port: 19132
+  address: 0.0.0.0
+
+remote:
+  address: 127.0.0.1
+  port: ${serverPort}
+
+auth-type: floodgate
+`;
+    await fs.writeFile(path.join(geyserConfigDir, 'config.yml'), geyserConfig);
+    return { success: true };
   } catch (error) {
     return { success: false, error: error.message };
   }
@@ -673,11 +967,19 @@ module.exports = {
   readServerFileNbt,
   writeServerFileNbt,
   checkJarSupportsPlugins,
+  checkJarSupportsMods,
   getModrinthPlugins,
   getModrinthPluginVersion,
+  installEssentialsXFromGitHub,
   installModrinthPlugin,
+  getModrinthMods,
+  getModrinthModVersion,
+  installModrinthMod,
   listPlugins,
   deletePlugin,
+  listMods,
+  deleteMod,
+  installGeyserFloodgate,
   listWorlds,
   deleteWorld,
   getDirectorySize,

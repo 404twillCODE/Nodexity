@@ -445,6 +445,21 @@ export default function CreateServerButton() {
                   <div className="font-mono text-sm text-text-primary">
                     {errorMessage || warningMessage}
                   </div>
+                  {errorMessage && /Forge|files\.minecraftforge\.net/i.test(errorMessage) && (
+                    <motion.button
+                      onClick={() => {
+                        setErrorMessage(null);
+                        setWarningMessage(null);
+                        setCreateStep(0);
+                        setShowImportFlow(true);
+                      }}
+                      className="btn-primary text-xs px-4 py-2 mt-3"
+                      whileHover={{ scale: 1.02 }}
+                      whileTap={{ scale: 0.98 }}
+                    >
+                      IMPORT SERVER INSTEAD
+                    </motion.button>
+                  )}
                 </div>
                 {errorMessage && (
                   <button
