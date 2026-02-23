@@ -4,12 +4,14 @@ import ToggleSwitch from "./ToggleSwitch";
 import { useServerManager } from "../hooks/useServerManager";
 
 type ServerType = 'paper' | 'spigot' | 'vanilla' | 'fabric' | 'forge' | 'purpur' | 'velocity' | 'waterfall' | 'bungeecord' | 'manual';
+type PresetType = "paper_plugins" | "vanilla" | "java_bedrock";
 
 export default function CreateServerButton() {
   const { createServer, startServer, refreshServers } = useServerManager();
   const [isCreating, setIsCreating] = useState(false);
   const [showInput, setShowInput] = useState(false);
   const [showImportFlow, setShowImportFlow] = useState(false);
+  const [showPresetFlow, setShowPresetFlow] = useState(false);
   const [importFolderPath, setImportFolderPath] = useState<string | null>(null);
   const [importServerName, setImportServerName] = useState("");
   const [serverName, setServerName] = useState("");
@@ -29,7 +31,11 @@ export default function CreateServerButton() {
   const [settings, setSettings] = useState<import("../hooks/useServerManager").AppSettings | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [warningMessage, setWarningMessage] = useState<string | null>(null);
-  const ramSliderRef = useRef<HTMLDivElement>(null);
+  const [presetType, setPresetType] = useState<PresetType>("paper_plugins");
+  const [presetVersion, setPresetVersion] = useState<string | null>(null);
+  const [presetVersions, setPresetVersions] = useState<string[]>([]);
+  const [presetLoading, setPresetLoading] = useState(false);
+  const [presetError, setPresetError] = useState<string | null>(null);
   const portCheckTimeoutRef = useRef<number | null>(null);
   const stepLabels = ['Server Type', 'Version', 'Settings'];
 
@@ -107,33 +113,7 @@ export default function CreateServerButton() {
     checkPortAvailability(serverPort);
   }, [showInput, createStep, serverPort, checkPortAvailability]);
 
-  useEffect(() => {
-    // Update green bar position for RAM slider
-    if (ramSliderRef.current && showInput && createStep === 2) {
-      const slider = ramSliderRef.current.querySelector('input[type="range"]') as HTMLInputElement;
-      const fill = ramSliderRef.current.querySelector('.ram-fill') as HTMLElement;
-      if (slider && fill) {
-        const updateFill = () => {
-          const value = parseFloat(slider.value);
-          const min = parseFloat(slider.min);
-          const max = parseFloat(slider.max);
-          const percentage = ((value - min) / (max - min)) * 100;
-          const sliderWidth = slider.offsetWidth;
-          const thumbWidth = 18;
-          const thumbPosition = (percentage / 100) * (sliderWidth - thumbWidth) + (thumbWidth / 2);
-          fill.style.width = `${Math.max(0, thumbPosition - (thumbWidth / 2))}px`;
-        };
-        const rafId = requestAnimationFrame(updateFill);
-        slider.addEventListener('input', updateFill);
-        window.addEventListener('resize', updateFill);
-        return () => {
-          cancelAnimationFrame(rafId);
-          slider.removeEventListener('input', updateFill);
-          window.removeEventListener('resize', updateFill);
-        };
-      }
-    }
-  }, [ramGB, maxRAM, showInput, createStep]);
+  // No extra effect needed for RAM slider fill; width is derived directly from state
 
   useEffect(() => {
     // Reload versions when server type changes
@@ -323,9 +303,155 @@ export default function CreateServerButton() {
     }
   };
 
+  const loadPresetVersions = useCallback(async () => {
+    if (!window.electronAPI) return;
+    setPresetLoading(true);
+    setPresetError(null);
+    try {
+      let versions: string[] = [];
+      if (presetType === "vanilla") {
+        versions = await window.electronAPI.server.getVanillaVersions();
+      } else {
+        // paper_plugins + java_bedrock both build on Paper
+        versions = await window.electronAPI.server.getPaperVersions();
+      }
+      setPresetVersions(versions);
+      setPresetVersion(versions[0] || null);
+    } catch (e) {
+      setPresetVersions([]);
+      setPresetVersion(null);
+      setPresetError("Failed to load preset versions. Please check your internet connection and try again.");
+    } finally {
+      setPresetLoading(false);
+    }
+  }, [presetType]);
+
+  useEffect(() => {
+    if (!showInput || !showPresetFlow) return;
+    loadPresetVersions();
+  }, [showInput, showPresetFlow, loadPresetVersions]);
+
+  const handleCreatePreset = async () => {
+    if (!serverName.trim()) {
+      setPresetError("Please enter a server name.");
+      return;
+    }
+    if (serverPort < 1024 || serverPort > 65535) {
+      setPresetError("Please enter a valid port (1024-65535).");
+      return;
+    }
+    if (!window.electronAPI) {
+      setPresetError("Electron API not available.");
+      return;
+    }
+
+    setErrorMessage(null);
+    setWarningMessage(null);
+    setPresetError(null);
+    setCreatingStatus("Creating preset server...");
+    setIsCreating(true);
+    try {
+      const name = serverName.trim();
+      const serverRAM = ramGB || settings?.defaultRAM || 4;
+
+      const baseServerType = presetType === "vanilla" ? "vanilla" : "paper";
+      let versionToUse = presetVersion;
+      if (!versionToUse) {
+        const v = baseServerType === "vanilla"
+          ? await window.electronAPI.server.getVanillaVersions()
+          : await window.electronAPI.server.getPaperVersions();
+        versionToUse = v[0] || null;
+      }
+      if (!versionToUse) {
+        setPresetError("Could not resolve a server version for this preset.");
+        return;
+      }
+
+      setCreatingStatus("Downloading server jar...");
+      const createResult = await createServer(
+        name,
+        baseServerType,
+        versionToUse,
+        serverRAM,
+        serverPort,
+        null,
+        name
+      );
+
+      if (!createResult.success) {
+        setPresetError(createResult.error || "Failed to create the server.");
+        return;
+      }
+
+      if (presetType === "paper_plugins") {
+        setCreatingStatus("Installing EssentialsX...");
+        const exResult = await window.electronAPI.server.installEssentialsXFromGitHub(name);
+        if (!exResult.success) {
+          console.warn("Could not install EssentialsX:", exResult.error);
+        }
+
+        const modrinthPlugins = [
+          { id: "luckperms", name: "LuckPerms" },
+          { id: "worldedit", name: "WorldEdit" },
+          { id: "chunky", name: "Chunky" },
+        ];
+
+        for (const p of modrinthPlugins) {
+          setCreatingStatus(`Installing ${p.name}...`);
+          const r = await window.electronAPI.server.installModrinthPlugin(name, p.id, versionToUse);
+          if (!r.success) {
+            console.warn(`Could not install ${p.name}:`, r.error);
+          }
+        }
+      } else if (presetType === "java_bedrock") {
+        setCreatingStatus("Installing Geyser & Floodgate...");
+        const r = await window.electronAPI.server.installGeyserFloodgate(name, serverPort);
+        if (!r.success) {
+          setPresetError(r.error || "Failed to install Geyser/Floodgate.");
+          return;
+        }
+      }
+
+      if (autoStart) {
+        setCreatingStatus("Starting server...");
+        const startResult = await startServer(name, serverRAM);
+        if (!startResult.success) {
+          setPresetError(startResult.error || "Server created, but failed to start.");
+          return;
+        }
+      }
+
+      await refreshServers();
+      setShowInput(false);
+      setShowPresetFlow(false);
+      setServerName("");
+      setServerType('paper');
+      setSelectedVersion(null);
+      setManualJarPath(null);
+      setRamGB(settings?.defaultRAM || 4);
+      setServerPort(settings?.defaultPort || 25565);
+      setCreateStep(0);
+      setErrorMessage(null);
+      setWarningMessage(null);
+      setPresetError(null);
+      setPresetType("paper_plugins");
+      setPresetVersion(null);
+      setPresetVersions([]);
+      setPortMessage(null);
+      setPortAutoApplied(false);
+      setAutoStart(true);
+    } catch (e: unknown) {
+      setPresetError(e instanceof Error ? e.message : "Unknown error occurred");
+    } finally {
+      setCreatingStatus("Creating server files...");
+      setIsCreating(false);
+    }
+  };
+
   const handleCancel = () => {
     setShowInput(false);
     setShowImportFlow(false);
+    setShowPresetFlow(false);
     setImportFolderPath(null);
     setImportServerName("");
     setServerName("");
@@ -340,6 +466,10 @@ export default function CreateServerButton() {
     setAutoStart(true);
     setErrorMessage(null);
     setWarningMessage(null);
+    setPresetError(null);
+    setPresetType("paper_plugins");
+    setPresetVersion(null);
+    setPresetVersions([]);
   };
 
   const handleChooseImportFolder = async () => {
@@ -402,6 +532,12 @@ export default function CreateServerButton() {
   ];
 
   if (showInput) {
+    const isPreset = showPresetFlow && !showImportFlow;
+    const isImport = showImportFlow;
+    const stepTitle = isPreset ? "Preset" : isImport ? "Import" : stepLabels[createStep];
+    const stepNumber = isPreset || isImport ? 1 : (createStep + 1);
+    const stepTotal = isPreset || isImport ? 1 : 3;
+
     return (
       <div className="fixed inset-0 flex items-center justify-center z-50 p-8" style={{ pointerEvents: 'auto' }}>
         <div className="absolute inset-0 bg-background/80 backdrop-blur-sm" onClick={handleCancel}></div>
@@ -424,26 +560,26 @@ export default function CreateServerButton() {
           CREATE SERVER
         </h3>
         <div className="flex items-center justify-between text-xs text-text-muted font-mono mt-2 mb-6">
-          <span>Step {createStep + 1} of 3</span>
-          <span className="text-text-primary">{stepLabels[createStep]}</span>
+          <span>Step {stepNumber} of {stepTotal}</span>
+          <span className="text-text-primary">{stepTitle}</span>
         </div>
         
         <div className="space-y-6 relative z-10">
           {/* Warning/Error Messages */}
-          {(warningMessage || errorMessage) && (
+          {(warningMessage || errorMessage || presetError) && (
             <div className={`p-4 rounded-lg border ${
-              errorMessage 
+              (errorMessage || presetError)
                 ? 'border-red-500/40 bg-red-500/10 text-red-200' 
                 : 'border-yellow-500/40 bg-yellow-500/10 text-yellow-200'
             }`}>
               <div className="flex items-start gap-3">
-                <span className="text-base mt-0.5">{errorMessage ? '⚠' : 'i'}</span>
+                <span className="text-base mt-0.5">{(errorMessage || presetError) ? '⚠' : 'i'}</span>
                 <div className="flex-1">
                   <div className="font-mono text-xs uppercase tracking-wider text-text-muted mb-1">
-                    {errorMessage ? 'Error' : 'Note'}
+                    {(errorMessage || presetError) ? 'Error' : 'Note'}
                   </div>
                   <div className="font-mono text-sm text-text-primary">
-                    {errorMessage || warningMessage}
+                    {errorMessage || presetError || warningMessage}
                   </div>
                   {errorMessage && /Forge|files\.minecraftforge\.net/i.test(errorMessage) && (
                     <motion.button
@@ -466,6 +602,7 @@ export default function CreateServerButton() {
                     onClick={() => {
                       setErrorMessage(null);
                       setWarningMessage(null);
+                      setPresetError(null);
                     }}
                     className="text-red-300 hover:text-red-200"
                   >
@@ -576,7 +713,171 @@ export default function CreateServerButton() {
               </div>
             </div>
           )}
-          {createStep === 0 && !showImportFlow && (
+          {createStep === 0 && showPresetFlow && !showImportFlow && (
+            <div>
+              <label className="block text-sm text-text-secondary font-mono mb-3">
+                Preset Server
+              </label>
+              <p className="text-xs text-text-muted font-mono mb-4">
+                Create a server with a recommended configuration (plugins or cross-play) in one go.
+              </p>
+
+              <div className="space-y-4">
+                <div>
+                  <div className="text-xs text-text-muted font-mono mb-2 uppercase tracking-wider">Preset</div>
+                  <div className="grid grid-cols-1 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setPresetType("paper_plugins")}
+                      className={`p-3 text-left rounded border transition-colors ${
+                        presetType === "paper_plugins"
+                          ? "border-accent bg-accent/10"
+                          : "border-border hover:border-accent/50"
+                      }`}
+                      disabled={isCreating}
+                    >
+                      <span className="font-mono font-medium text-text-primary">Paper + Plugins</span>
+                      <p className="text-xs text-text-muted mt-0.5">EssentialsX, LuckPerms, WorldEdit, Chunky</p>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPresetType("vanilla")}
+                      className={`p-3 text-left rounded border transition-colors ${
+                        presetType === "vanilla"
+                          ? "border-accent bg-accent/10"
+                          : "border-border hover:border-accent/50"
+                      }`}
+                      disabled={isCreating}
+                    >
+                      <span className="font-mono font-medium text-text-primary">Vanilla</span>
+                      <p className="text-xs text-text-muted mt-0.5">Clean vanilla Minecraft server</p>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPresetType("java_bedrock")}
+                      className={`p-3 text-left rounded border transition-colors ${
+                        presetType === "java_bedrock"
+                          ? "border-accent bg-accent/10"
+                          : "border-border hover:border-accent/50"
+                      }`}
+                      disabled={isCreating}
+                    >
+                      <span className="font-mono font-medium text-text-primary">Java + Bedrock</span>
+                      <p className="text-xs text-text-muted mt-0.5">Geyser &amp; Floodgate — Bedrock players can join</p>
+                    </button>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs text-text-muted font-mono mb-1">Server name</label>
+                  <input
+                    type="text"
+                    value={serverName}
+                    onChange={(e) => setServerName(e.target.value)}
+                    placeholder="My Server"
+                    className="w-full bg-background-secondary border border-border px-4 py-3 text-text-primary font-mono text-sm rounded focus:outline-none focus:border-accent/50"
+                    disabled={isCreating}
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs text-text-muted font-mono mb-1">Version</label>
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={presetVersion || ""}
+                      onChange={(e) => setPresetVersion(e.target.value || null)}
+                      className="select-custom flex-1"
+                      disabled={isCreating || presetLoading || presetVersions.length === 0}
+                    >
+                      {presetVersions.length === 0 && <option value="">Latest</option>}
+                      {presetVersions.map((v) => (
+                        <option key={v} value={v}>{v}</option>
+                      ))}
+                    </select>
+                    {presetLoading && <span className="text-xs text-text-muted font-mono">Loading...</span>}
+                    {!presetLoading && (
+                      <motion.button
+                        type="button"
+                        onClick={loadPresetVersions}
+                        disabled={isCreating}
+                        className="btn-secondary text-xs"
+                        whileHover={!isCreating ? { scale: 1.02 } : {}}
+                        whileTap={!isCreating ? { scale: 0.98 } : {}}
+                      >
+                        REFRESH
+                      </motion.button>
+                    )}
+                  </div>
+                </div>
+
+                {/* RAM Allocation */}
+                <div className="text-text-secondary font-mono text-sm">
+                  <label className="block mb-2 text-text-primary">RAM Allocation: {ramGB}GB</label>
+                  <div className="flex items-center gap-4 relative">
+                    <div className="flex-1 relative h-2">
+                      {/* Filled portion - stops just before thumb */}
+                      <div
+                        className="ram-fill absolute inset-y-0 left-0 h-2 bg-accent rounded-l-lg pointer-events-none"
+                        style={{
+                          width: `min(calc(${(ramGB / maxRAM) * 100}% - 9px), calc(100% - 18px))`,
+                          zIndex: 1,
+                        }}
+                      ></div>
+                      {/* Slider input */}
+                      <input
+                        type="range"
+                        min="1"
+                        max={maxRAM}
+                        value={ramGB}
+                        onChange={(e) => setRamGB(parseInt(e.target.value))}
+                        disabled={isCreating}
+                        className="absolute inset-0 w-full h-2 appearance-none cursor-pointer slider-custom bg-transparent"
+                        style={{ zIndex: 5 }}
+                      />
+                    </div>
+                  </div>
+                  <div className="flex justify-between text-xs text-text-muted font-mono mt-1">
+                    <span>1GB</span>
+                    <span>{maxRAM}GB</span>
+                  </div>
+                </div>
+
+                {/* Server Port */}
+                <div className="text-text-secondary font-mono text-sm">
+                  <label className="block mb-2 text-text-primary">Server Port</label>
+                  <input
+                    type="number"
+                    min="1024"
+                    max="65535"
+                    value={serverPort}
+                    onChange={(e) => {
+                      setPortAutoApplied(false);
+                      setPortMessage(null);
+                      setServerPort(parseInt(e.target.value) || 0);
+                    }}
+                    disabled={isCreating}
+                    className="w-full bg-background-secondary border border-border px-4 py-3 text-text-primary font-mono text-sm focus:outline-none focus:border-accent/50 rounded"
+                  />
+                  <p className="text-xs text-text-muted mt-1">Recommended: 25565 (1024-65535)</p>
+                </div>
+
+                <div className="flex items-start justify-between text-text-secondary font-mono text-sm">
+                  <div className="text-left">
+                    <span>Auto start server</span>
+                    <p className="text-xs text-text-muted">Launch immediately after creation</p>
+                  </div>
+                  <ToggleSwitch
+                    checked={autoStart}
+                    onChange={(checked) => setAutoStart(checked)}
+                    ariaLabel="Auto-start server"
+                    disabled={isCreating}
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {createStep === 0 && !showImportFlow && !showPresetFlow && (
             <div>
               <label className="block text-sm text-text-secondary font-mono mb-3">
                 Server Type
@@ -682,10 +983,10 @@ export default function CreateServerButton() {
                   </div>
                 </div>
 
-                {/* Manual + Import */}
+                {/* Manual + Presets + Import */}
                 <div>
                   <div className="text-xs text-text-muted font-mono mb-2 uppercase tracking-wider">Other</div>
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-3 gap-3">
                     {serverTypes.filter(t => t.category === 'manual').map((type) => (
                       <motion.button
                         key={type.id}
@@ -726,9 +1027,36 @@ export default function CreateServerButton() {
                     ))}
                     <motion.button
                       type="button"
+                      onClick={() => {
+                        setShowPresetFlow(true);
+                        setShowImportFlow(false);
+                        setErrorMessage(null);
+                        setWarningMessage(null);
+                        setPresetError(null);
+                      }}
+                      disabled={isCreating}
+                      className="relative p-4 rounded-lg border-2 border-border bg-background-secondary hover:border-border/80 transition-all text-left disabled:opacity-50 disabled:cursor-not-allowed"
+                      whileHover={!isCreating ? { scale: 1.02 } : {}}
+                      whileTap={!isCreating ? { scale: 0.98 } : {}}
+                      style={{ pointerEvents: 'auto' }}
+                    >
+                      <div className="flex items-start gap-3">
+                        <span className="text-2xl">✨</span>
+                        <div className="flex-1 min-w-0">
+                          <div className="font-mono font-semibold text-text-primary text-sm mb-1">
+                            Presets
+                          </div>
+                          <div className="text-xs text-text-muted font-mono">
+                            Create a recommended server (plugins or cross-play)
+                          </div>
+                        </div>
+                      </div>
+                    </motion.button>
+                    <motion.button
+                      type="button"
                       onClick={() => setShowImportFlow(true)}
                       disabled={isCreating}
-                      className="relative p-4 rounded-lg border-2 border-border bg-background-secondary hover:border-accent/50 transition-all text-left disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="relative p-4 rounded-lg border-2 border-border bg-background-secondary hover:border-border/80 transition-all text-left disabled:opacity-50 disabled:cursor-not-allowed"
                       whileHover={!isCreating ? { scale: 1.02 } : {}}
                       whileTap={!isCreating ? { scale: 0.98 } : {}}
                       style={{ pointerEvents: 'auto' }}
@@ -899,11 +1227,14 @@ export default function CreateServerButton() {
               <div className="text-text-secondary font-mono text-sm">
                 <label className="block mb-2 text-text-primary">RAM Allocation: {ramGB}GB</label>
                 <div className="flex items-center gap-4 relative">
-                  <div className="flex-1 relative h-2" ref={ramSliderRef}>
+                  <div className="flex-1 relative h-2">
                     {/* Filled portion - calculated dynamically to stop at thumb */}
                     <div 
                       className="ram-fill absolute inset-y-0 left-0 h-2 bg-accent rounded-l-lg pointer-events-none"
-                      style={{ zIndex: 1 }}
+                      style={{ 
+                        width: `min(calc(${(ramGB / maxRAM) * 100}% - 9px), calc(100% - 18px))`, 
+                        zIndex: 1 
+                      }}
                     ></div>
                     {/* Slider input */}
                     <input
@@ -960,12 +1291,16 @@ export default function CreateServerButton() {
         </div>
 
         <div className="flex gap-3 mt-8 relative z-10">
-          {(createStep > 0 || showImportFlow) && (
+          {(createStep > 0 || showImportFlow || showPresetFlow) && (
             <motion.button
               onClick={() => {
                 if (showImportFlow) {
                   setShowImportFlow(false);
                   setErrorMessage(null);
+                  setPresetError(null);
+                } else if (showPresetFlow) {
+                  setShowPresetFlow(false);
+                  setPresetError(null);
                 } else {
                   setCreateStep((prev) => Math.max(0, prev - 1));
                 }
@@ -989,6 +1324,17 @@ export default function CreateServerButton() {
               style={{ pointerEvents: 'auto' }}
             >
               {isCreating ? 'IMPORTING...' : 'NEXT'}
+            </motion.button>
+          ) : showPresetFlow ? (
+            <motion.button
+              onClick={handleCreatePreset}
+              disabled={isCreating || !serverName.trim() || !presetType || (presetVersions.length > 0 && !presetVersion)}
+              className="btn-primary flex-1 disabled:opacity-50 disabled:cursor-not-allowed relative z-10"
+              whileHover={{ scale: (isCreating || !serverName.trim() || (presetVersions.length > 0 && !presetVersion)) ? 1 : 1.02 }}
+              whileTap={{ scale: (isCreating || !serverName.trim() || (presetVersions.length > 0 && !presetVersion)) ? 1 : 0.98 }}
+              style={{ pointerEvents: 'auto' }}
+            >
+              {isCreating ? "CREATING..." : "CREATE PRESET"}
             </motion.button>
           ) : createStep < 2 ? (
             <motion.button

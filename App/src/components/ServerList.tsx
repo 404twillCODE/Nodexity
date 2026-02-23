@@ -42,12 +42,22 @@ const AggregateStatsPanel = memo(function AggregateStatsPanel({
     totalDiskGB: number;
     totalPlayersOnline: number;
     totalPlayersMax: number;
+    runningServers: number;
+    totalServers: number;
   } | null>(null);
   const [diskUsageGB, setDiskUsageGB] = useState<number>(0);
   const [diskTotalGB, setDiskTotalGB] = useState<number>(0);
   const [diskUsedGB, setDiskUsedGB] = useState<number>(0);
   const [systemAvailableRAMMB, setSystemAvailableRAMMB] = useState<number>(0);
-  const lastStatsRef = useRef<{ cpu: number; ramMB: number; diskGB: number; playersOnline: number; playersMax: number } | null>(null);
+  const lastStatsRef = useRef<{
+    cpu: number;
+    ramMB: number;
+    diskGB: number;
+    playersOnline: number;
+    playersMax: number;
+    runningServers: number;
+    totalServers: number;
+  } | null>(null);
   const usageIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const diskIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -72,8 +82,12 @@ const AggregateStatsPanel = memo(function AggregateStatsPanel({
             const res = playerResults[i];
             if (res?.success && typeof res.online === "number") {
               totalPlayersOnline += res.online;
-              totalPlayersMax += res.max ?? 0;
+              totalPlayersMax += typeof res.max === "number" ? res.max : 0;
             }
+          }
+          // If we know players are online but no max was reported, treat max as "at least online"
+          if (totalPlayersOnline > 0 && totalPlayersMax === 0) {
+            totalPlayersMax = totalPlayersOnline;
           }
           const nextStats = {
             totalCPU: usageResult.totalCPU || 0,
@@ -82,6 +96,8 @@ const AggregateStatsPanel = memo(function AggregateStatsPanel({
             totalDiskGB: diskUsageGB || 0,
             totalPlayersOnline,
             totalPlayersMax,
+            runningServers: running.length,
+            totalServers: servers.length,
           };
 
           const last = lastStatsRef.current;
@@ -91,14 +107,19 @@ const AggregateStatsPanel = memo(function AggregateStatsPanel({
           const playersChanged =
             (last?.playersOnline ?? -1) !== nextStats.totalPlayersOnline ||
             (last?.playersMax ?? -1) !== nextStats.totalPlayersMax;
+          const serversChanged =
+            (last?.runningServers ?? -1) !== nextStats.runningServers ||
+            (last?.totalServers ?? -1) !== nextStats.totalServers;
 
-          if (!last || cpuDiff > 0.5 || ramDiff > 10 || diskDiff > 0.01 || playersChanged) {
+          if (!last || cpuDiff > 0.5 || ramDiff > 10 || diskDiff > 0.01 || playersChanged || serversChanged) {
             lastStatsRef.current = {
               cpu: nextStats.totalCPU,
               ramMB: nextStats.totalRAMMB,
               diskGB: nextStats.totalDiskGB,
               playersOnline: nextStats.totalPlayersOnline,
               playersMax: nextStats.totalPlayersMax,
+              runningServers: nextStats.runningServers,
+              totalServers: nextStats.totalServers,
             };
             requestAnimationFrame(() => {
               setAggregateStats(nextStats);
@@ -222,12 +243,17 @@ const AggregateStatsPanel = memo(function AggregateStatsPanel({
             Disk Usage
           </div>
           <div className="text-2xl font-semibold text-text-primary font-mono">
-            {aggregateStats.totalDiskGB.toFixed(2)} GB
+            {aggregateStats.totalDiskGB >= 1
+              ? `${aggregateStats.totalDiskGB.toFixed(2)} GB`
+              : `${(aggregateStats.totalDiskGB * 1024).toFixed(0)} MB`}
+          </div>
+          <div className="text-xs text-text-muted font-mono mt-1">
+            of {diskTotalGB ? diskTotalGB.toFixed(0) : 0} GB disk
           </div>
           <div className="mt-3 h-1.5 w-full rounded-full bg-background-secondary">
             <div
               className="h-full rounded-full bg-accent/60 transition-all"
-              style={{ width: `${Math.min(100, diskTotalGB ? (diskUsedGB / diskTotalGB) * 100 : 0)}%` }}
+              style={{ width: `${Math.min(100, diskTotalGB ? (diskUsageGB / diskTotalGB) * 100 : 0)}%` }}
             />
           </div>
         </div>
@@ -248,6 +274,9 @@ const AggregateStatsPanel = memo(function AggregateStatsPanel({
               className="h-full rounded-full bg-accent transition-all"
               style={{ width: `${aggregateStats.totalPlayersMax ? Math.min(100, (aggregateStats.totalPlayersOnline / aggregateStats.totalPlayersMax) * 100) : 0}%` }}
             />
+          </div>
+          <div className="text-xs text-text-muted font-mono mt-1">
+            {aggregateStats.runningServers} / {aggregateStats.totalServers} servers running
           </div>
         </div>
       </div>

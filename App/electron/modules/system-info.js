@@ -480,9 +480,9 @@ async function getAllServersUsage() {
 // Get disk usage for all servers
 async function getServersDiskUsage() {
   try {
-    if (diskUsageCache.payload && Date.now() - diskUsageCache.timestamp < 15000) {
-      return diskUsageCache.payload;
-    }
+    // Always recompute disk usage so the UI reflects the
+    // current size of all server folders, even if nothing
+    // is running or servers were recently added/removed.
     const settings = await config.getAppSettings();
     const serversDir = settings.serversDirectory || config.SERVERS_DIR;
     const servers = await lifecycle().listServers();
@@ -510,13 +510,24 @@ async function getServersDiskUsage() {
 
     const serverSizes = {};
     for (const server of servers) {
-      const serverPath = path.join(serversDir, server.name);
       try {
-        const size = await getDirectorySize(serverPath);
-        serverSizes[server.name] = size;
+        // Use the internal server id (config key / folder name) first.
+        const key = server.id || server.name;
+        const serverConfig = await config.getServerConfig(key);
+
+        let basePath = null;
+        if (serverConfig && typeof serverConfig.path === 'string' && serverConfig.path.trim()) {
+          basePath = serverConfig.path.trim();
+        } else {
+          basePath = path.join(serversDir, key);
+        }
+
+        const size = await getDirectorySize(basePath);
+        serverSizes[key] = size;
         totalSize += size;
       } catch (error) {
-        serverSizes[server.name] = 0;
+        const key = server.id || server.name;
+        serverSizes[key] = 0;
       }
     }
 

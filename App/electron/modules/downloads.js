@@ -64,7 +64,27 @@ async function downloadFile(url, filepath) {
     const file = require('fs').createWriteStream(filepath);
     
     const makeRequest = (requestUrl) => {
-      const request = https.get(requestUrl, (response) => {
+      // Basic validation to avoid passing invalid URLs into https.get
+      if (typeof requestUrl !== 'string' || requestUrl.trim() === '') {
+        file.close();
+        if (require('fs').existsSync(filepath)) {
+          require('fs').unlinkSync(filepath);
+        }
+        reject(new Error(`Invalid download URL: ${String(requestUrl)}`));
+        return;
+      }
+      if (!/^https?:\/\//i.test(requestUrl.trim())) {
+        file.close();
+        if (require('fs').existsSync(filepath)) {
+          require('fs').unlinkSync(filepath);
+        }
+        reject(new Error(`Invalid download URL (must start with http/https): ${requestUrl}`));
+        return;
+      }
+
+      let request;
+      try {
+        request = https.get(requestUrl, (response) => {
         if (response.statusCode === 302 || response.statusCode === 301) {
           makeRequest(response.headers.location);
         } else if (response.statusCode === 200) {
@@ -80,7 +100,16 @@ async function downloadFile(url, filepath) {
           }
           reject(new Error(`Failed to download: HTTP ${response.statusCode}`));
         }
-      });
+        });
+      } catch (syncError) {
+        // Catch synchronous URL parsing errors from https.get/new URL
+        file.close();
+        if (require('fs').existsSync(filepath)) {
+          require('fs').unlinkSync(filepath);
+        }
+        reject(syncError);
+        return;
+      }
       
       request.on('error', (error) => {
         file.close();

@@ -84,9 +84,13 @@ async function getServerConfig(serverName) {
 // Save server config
 async function saveServerConfig(serverName, config) {
   const configs = await loadServerConfigs();
+  const appSettings = configs._appSettings || {};
+  const serversDirForPath = appSettings.serversDirectory || SERVERS_DIR;
   configs[serverName] = {
     name: config.displayName || serverName,
-    path: path.join(SERVERS_DIR, serverName),
+    // Store the absolute path to the server folder so features like
+    // disk usage work even if the servers directory is moved.
+    path: config.path || path.join(serversDirForPath, serverName),
     version: config.version || 'unknown',
     ramGB: config.ramGB || 4,
     status: config.status || 'STOPPED',
