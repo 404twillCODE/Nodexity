@@ -520,15 +520,15 @@ export default function CreateServerButton() {
 
   const serverTypes = [
     { id: 'paper' as ServerType, name: 'Paper', description: 'High performance with plugin support', color: 'from-green-500/20 to-emerald-500/20', borderColor: 'border-green-500/50', icon: '📄', category: 'server' },
-    { id: 'spigot' as ServerType, name: 'Spigot', description: 'Plugin support, older alternative', color: 'from-yellow-500/20 to-orange-500/20', borderColor: 'border-yellow-500/50', icon: '🔧', category: 'server' },
     { id: 'vanilla' as ServerType, name: 'Vanilla', description: 'Official Minecraft server', color: 'from-blue-500/20 to-cyan-500/20', borderColor: 'border-blue-500/50', icon: '⚡', category: 'server' },
     { id: 'fabric' as ServerType, name: 'Fabric', description: 'Mod support with Fabric API', color: 'from-purple-500/20 to-pink-500/20', borderColor: 'border-purple-500/50', icon: '🧵', category: 'server' },
-    { id: 'forge' as ServerType, name: 'Forge', description: 'Mod support with Forge', color: 'from-red-500/20 to-rose-500/20', borderColor: 'border-red-500/50', icon: '🔥', category: 'server' },
     { id: 'purpur' as ServerType, name: 'Purpur', description: 'Paper fork with better performance', color: 'from-pink-500/20 to-rose-500/20', borderColor: 'border-pink-500/50', icon: '🟣', category: 'server' },
+    { id: 'forge' as ServerType, name: 'Forge', description: 'Mod support with Forge', color: 'from-red-500/20 to-rose-500/20', borderColor: 'border-red-500/50', icon: '🔥', category: 'server' },
+    { id: 'spigot' as ServerType, name: 'Spigot', description: 'Plugin support, older alternative', color: 'from-yellow-500/20 to-orange-500/20', borderColor: 'border-yellow-500/50', icon: '🔧', category: 'server' },
     { id: 'velocity' as ServerType, name: 'Velocity', description: 'Modern proxy server', color: 'from-indigo-500/20 to-blue-500/20', borderColor: 'border-indigo-500/50', icon: '🚀', category: 'proxy' },
     { id: 'waterfall' as ServerType, name: 'Waterfall', description: 'BungeeCord fork proxy', color: 'from-teal-500/20 to-cyan-500/20', borderColor: 'border-teal-500/50', icon: '💧', category: 'proxy' },
     { id: 'bungeecord' as ServerType, name: 'BungeeCord', description: 'Original proxy server', color: 'from-amber-500/20 to-yellow-500/20', borderColor: 'border-amber-500/50', icon: '🌊', category: 'proxy' },
-    { id: 'manual' as ServerType, name: 'Manual', description: 'Select your own JAR file', color: 'from-gray-500/20 to-slate-500/20', borderColor: 'border-gray-500/50', icon: '📁', category: 'manual' },
+    { id: 'manual' as ServerType, name: 'Manual', description: 'Use your own JAR', color: 'from-gray-500/20 to-slate-500/20', borderColor: 'border-gray-500/50', icon: '📁', category: 'manual' },
   ];
 
   if (showInput) {
@@ -886,13 +886,13 @@ export default function CreateServerButton() {
                 {/* Game Servers */}
                 <div>
                   <div className="text-xs text-text-muted font-mono mb-2 uppercase tracking-wider">Game Servers</div>
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-2 gap-3 items-stretch">
                     {serverTypes.filter(t => t.category === 'server').map((type) => (
                       <motion.button
                         key={type.id}
                         onClick={() => handleSelectType(type.id)}
                         disabled={isCreating}
-                        className={`relative p-4 rounded-lg border-2 transition-all text-left ${
+                        className={`relative p-4 rounded-lg border-2 transition-all text-left h-full flex flex-col ${
                           serverType === type.id
                             ? `${type.borderColor} bg-gradient-to-br ${type.color}`
                             : 'border-border bg-background-secondary hover:border-border/80'
@@ -941,13 +941,13 @@ export default function CreateServerButton() {
                 {/* Proxy Servers */}
                 <div>
                   <div className="text-xs text-text-muted font-mono mb-2 uppercase tracking-wider">Proxy Servers</div>
-                  <div className="grid grid-cols-3 gap-3">
+                  <div className="grid grid-cols-3 gap-3 items-stretch">
                     {serverTypes.filter(t => t.category === 'proxy').map((type) => (
                       <motion.button
                         key={type.id}
                         onClick={() => handleSelectType(type.id)}
                         disabled={isCreating}
-                        className={`relative p-4 rounded-lg border-2 transition-all text-left ${
+                        className={`relative p-4 rounded-lg border-2 transition-all text-left h-full flex flex-col ${
                           serverType === type.id
                             ? `${type.borderColor} bg-gradient-to-br ${type.color}`
                             : 'border-border bg-background-secondary hover:border-border/80'
@@ -986,13 +986,13 @@ export default function CreateServerButton() {
                 {/* Manual + Presets + Import */}
                 <div>
                   <div className="text-xs text-text-muted font-mono mb-2 uppercase tracking-wider">Other</div>
-                  <div className="grid grid-cols-3 gap-3">
+                  <div className="grid grid-cols-3 gap-3 items-stretch">
                     {serverTypes.filter(t => t.category === 'manual').map((type) => (
                       <motion.button
                         key={type.id}
                         onClick={() => handleSelectType(type.id)}
                         disabled={isCreating}
-                        className={`relative p-4 rounded-lg border-2 transition-all text-left ${
+                        className={`relative p-4 rounded-lg border-2 transition-all text-left h-full flex flex-col ${
                           serverType === type.id
                             ? `${type.borderColor} bg-gradient-to-br ${type.color}`
                             : 'border-border bg-background-secondary hover:border-border/80'
@@ -1035,7 +1035,7 @@ export default function CreateServerButton() {
                         setPresetError(null);
                       }}
                       disabled={isCreating}
-                      className="relative p-4 rounded-lg border-2 border-border bg-background-secondary hover:border-border/80 transition-all text-left disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="relative p-4 rounded-lg border-2 border-border bg-background-secondary hover:border-border/80 transition-all text-left h-full flex flex-col disabled:opacity-50 disabled:cursor-not-allowed"
                       whileHover={!isCreating ? { scale: 1.02 } : {}}
                       whileTap={!isCreating ? { scale: 0.98 } : {}}
                       style={{ pointerEvents: 'auto' }}
@@ -1046,9 +1046,7 @@ export default function CreateServerButton() {
                           <div className="font-mono font-semibold text-text-primary text-sm mb-1">
                             Presets
                           </div>
-                          <div className="text-xs text-text-muted font-mono">
-                            Create a recommended server (plugins or cross-play)
-                          </div>
+                          <div className="text-xs text-text-muted font-mono">Recommended setup</div>
                         </div>
                       </div>
                     </motion.button>
@@ -1056,7 +1054,7 @@ export default function CreateServerButton() {
                       type="button"
                       onClick={() => setShowImportFlow(true)}
                       disabled={isCreating}
-                      className="relative p-4 rounded-lg border-2 border-border bg-background-secondary hover:border-border/80 transition-all text-left disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="relative p-4 rounded-lg border-2 border-border bg-background-secondary hover:border-border/80 transition-all text-left h-full flex flex-col disabled:opacity-50 disabled:cursor-not-allowed"
                       whileHover={!isCreating ? { scale: 1.02 } : {}}
                       whileTap={!isCreating ? { scale: 0.98 } : {}}
                       style={{ pointerEvents: 'auto' }}
@@ -1067,9 +1065,7 @@ export default function CreateServerButton() {
                           <div className="font-mono font-semibold text-text-primary text-sm mb-1">
                             Import
                           </div>
-                          <div className="text-xs text-text-muted font-mono">
-                            Import an existing server folder into Nodexity
-                          </div>
+                          <div className="text-xs text-text-muted font-mono">Import existing server</div>
                         </div>
                       </div>
                     </motion.button>

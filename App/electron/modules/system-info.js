@@ -612,6 +612,14 @@ async function runAutoBackups() {
   if (backupInFlight) return;
   backupInFlight = true;
   try {
+    // Do not create any backup folders until initial setup has been completed.
+    // This prevents creating the default AppData\.nodexity structure when the
+    // user first launches the app and hasn't chosen storage locations yet.
+    const configs = await config.loadServerConfigs();
+    if (!configs._setupComplete) {
+      return;
+    }
+
     const settings = await config.getAppSettings();
     if (!settings.autoBackup) return;
 

@@ -26,11 +26,45 @@ const CONFIG_FILE = path.join(NODEXITY_DIR, 'servers.json');
 const CONFIG_CACHE = { data: null, fileMtime: 0, cachedAt: 0 };
 const CONFIG_CACHE_TTL_MS = 1500;
 
-// Ensure directories exist
-async function ensureDirectories() {
+// Ensure Nodexity config + storage directories exist.
+// If appSettings are provided, prefer those directories over the defaults.
+async function ensureDirectories(appSettings = null) {
+  // Always ensure the base Nodexity directory so we have a place for config + caches.
   await fs.mkdir(NODEXITY_DIR, { recursive: true });
-  await fs.mkdir(SERVERS_DIR, { recursive: true });
-  await fs.mkdir(BACKUPS_DIR, { recursive: true });
+
+  let serversDirToUse = SERVERS_DIR;
+  let backupsDirToUse = BACKUPS_DIR;
+
+  // Prefer explicit app settings if available
+  if (appSettings) {
+    if (appSettings.serversDirectory) {
+      serversDirToUse = appSettings.serversDirectory;
+    }
+    if (appSettings.backupsDirectory) {
+      backupsDirToUse = appSettings.backupsDirectory;
+    }
+  } else {
+    // Fall back to whatever is stored on disk (if any), to respect user choices
+    try {
+      const configs = await loadServerConfigs();
+      const storedSettings = configs._appSettings || {};
+      if (storedSettings.serversDirectory) {
+        serversDirToUse = storedSettings.serversDirectory;
+      }
+      if (storedSettings.backupsDirectory) {
+        backupsDirToUse = storedSettings.backupsDirectory;
+      }
+    } catch {
+      // Ignore read errors; we'll just stick with defaults.
+    }
+  }
+
+  if (serversDirToUse) {
+    await fs.mkdir(serversDirToUse, { recursive: true });
+  }
+  if (backupsDirToUse) {
+    await fs.mkdir(backupsDirToUse, { recursive: true });
+  }
 }
 
 function normalizeRamGB(value, fallback) {
@@ -70,7 +104,9 @@ function invalidateConfigCache() {
 
 // Save server configs
 async function saveServerConfigs(configs) {
-  await ensureDirectories();
+  // Prefer the app settings attached to the in-memory configs so we respect
+  // the user-selected servers/backups directories when first saving.
+  await ensureDirectories(configs?._appSettings || null);
   await fs.writeFile(CONFIG_FILE, JSON.stringify(configs, null, 2), 'utf8');
   invalidateConfigCache();
 }

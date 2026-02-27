@@ -47,7 +47,6 @@ const AggregateStatsPanel = memo(function AggregateStatsPanel({
   } | null>(null);
   const [diskUsageGB, setDiskUsageGB] = useState<number>(0);
   const [diskTotalGB, setDiskTotalGB] = useState<number>(0);
-  const [diskUsedGB, setDiskUsedGB] = useState<number>(0);
   const [systemAvailableRAMMB, setSystemAvailableRAMMB] = useState<number>(0);
   const lastStatsRef = useRef<{
     cpu: number;
@@ -159,9 +158,7 @@ const AggregateStatsPanel = memo(function AggregateStatsPanel({
             return serversDir.toLowerCase().startsWith(drive.letter.toLowerCase());
           });
           const total = match?.totalGB ?? info.drives.reduce((sum, drive) => sum + (drive.totalGB || 0), 0);
-          const used = match?.usedGB ?? info.drives.reduce((sum, drive) => sum + (drive.usedGB || 0), 0);
           setDiskTotalGB(total);
-          setDiskUsedGB(used);
         }
       } catch (error) {
         console.error('Failed to load system context:', error);
