@@ -17,6 +17,18 @@ let baseConfig = {
 
 let currentToken = null;
 
+const defaultFeatures = {
+  enableHelp: true,
+  enablePing: true,
+  enableMcStatus: true,
+  enableMcSet: true,
+  enableSetPrefix: true,
+  enableSetName: true,
+  enableNxServers: true,
+};
+
+let features = { ...defaultFeatures };
+
 const GUILD_CONFIGS_PATH = path.join(config.NODEXITY_DIR, 'discord-guilds.json');
 
 let guildConfigs = {};
@@ -279,6 +291,12 @@ async function applyDiscordBotSettings(appSettings) {
     botOwnerIds: [],
   };
 
+  const incomingFeatures = discord.features || {};
+  features = {
+    ...defaultFeatures,
+    ...incomingFeatures,
+  };
+
   if (client && currentToken === tokenRaw) {
     return;
   }
@@ -325,6 +343,15 @@ async function applyDiscordBotSettings(appSettings) {
     const args = message.content.slice(prefix.length).trim().split(/\s+/);
     const commandName = args.shift()?.toLowerCase();
     if (!commandName) return;
+
+    // Feature toggles
+    if (commandName === 'help' && features.enableHelp === false) return;
+    if (commandName === 'ping' && features.enablePing === false) return;
+    if (commandName === 'mc-status' && features.enableMcStatus === false) return;
+    if (commandName === 'mc-set' && features.enableMcSet === false) return;
+    if (commandName === 'set-prefix' && features.enableSetPrefix === false) return;
+    if (commandName === 'set-name' && features.enableSetName === false) return;
+    if (commandName === 'nx-servers' && features.enableNxServers === false) return;
 
     const command = textCommands[commandName];
     if (!command) return;

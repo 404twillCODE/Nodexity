@@ -72,7 +72,23 @@ Each Discord server can have its own prefix, Minecraft server address and nickna
 
 ---
 
-### 5. Troubleshooting
+### 5. Customization & feature toggles
+
+In the **Discord** tab you can also configure which features are enabled:
+
+- **Help command** – turn the `help` command on/off.
+- **Ping command** – allow or disable the `ping` latency check.
+- **Minecraft status** – enable/disable `mc-status`.
+- **Change Minecraft server (`mc-set`)** – control whether admins can change the server per Discord guild.
+- **Per-server prefixes (`set-prefix`)** – allow or block changing the prefix in each Discord guild.
+- **Per-server nickname (`set-name`)** – allow or block changing the bot’s nickname in each guild.
+- **Nodexity servers list (`nx-servers`)** – enable/disable showing Nodexity-managed servers.
+
+These toggles apply globally to the bot but affect how it behaves in every Discord server where it is invited.
+
+---
+
+### 6. Troubleshooting
 
 - **Bot shows as offline**
   - Make sure the **Nodexity app is running**.

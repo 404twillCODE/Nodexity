@@ -4,6 +4,16 @@ import ToggleSwitch from "./ToggleSwitch";
 
 type AppSettings = import("../hooks/useServerManager").AppSettings;
 
+interface DiscordBotFeatures {
+  enableHelp?: boolean;
+  enablePing?: boolean;
+  enableMcStatus?: boolean;
+  enableMcSet?: boolean;
+  enableSetPrefix?: boolean;
+  enableSetName?: boolean;
+  enableNxServers?: boolean;
+}
+
 interface DiscordBotSettings {
   enabled?: boolean;
   token?: string;
@@ -11,6 +21,7 @@ interface DiscordBotSettings {
   defaultPrefix?: string;
   defaultHost?: string;
   defaultPort?: number;
+  features?: DiscordBotFeatures;
 }
 
 export default function DiscordView() {
@@ -58,6 +69,7 @@ export default function DiscordView() {
   };
 
   const discord: DiscordBotSettings = (settings as any)?.discordBot || {};
+  const features: DiscordBotFeatures = discord.features || {};
 
   const inviteUrl =
     discord.clientId && String(discord.clientId).trim().length > 0
@@ -230,6 +242,130 @@ export default function DiscordView() {
               These defaults are used by Nodexity&apos;s built-in Discord bot when Discord
               integration is enabled and Nodexity is running.
             </p>
+          </div>
+        </motion.div>
+
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.15, type: "spring", stiffness: 100, damping: 15 }}
+          className="system-card p-6"
+        >
+          <h2 className="text-lg font-semibold text-text-primary font-mono mb-4">
+            Bot Features
+          </h2>
+          <p className="text-xs text-text-muted font-mono mb-4">
+            Turn individual commands and features on or off. This applies to all Discord servers
+            where the bot is invited.
+          </p>
+          <div className="space-y-4 text-text-secondary font-mono text-sm">
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <span>Help command</span>
+                  <p className="text-xs text-text-muted">
+                    Enable <code>help</code> so users can see available commands.
+                  </p>
+                </div>
+                <ToggleSwitch
+                  checked={features.enableHelp !== false}
+                  onChange={(checked) =>
+                    saveDiscordSetting("features", { ...features, enableHelp: checked })
+                  }
+                  ariaLabel="Enable help command"
+                />
+              </div>
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <span>Ping command</span>
+                  <p className="text-xs text-text-muted">
+                    Allow users to test latency with <code>ping</code>.
+                  </p>
+                </div>
+                <ToggleSwitch
+                  checked={features.enablePing !== false}
+                  onChange={(checked) =>
+                    saveDiscordSetting("features", { ...features, enablePing: checked })
+                  }
+                  ariaLabel="Enable ping command"
+                />
+              </div>
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <span>Minecraft status</span>
+                  <p className="text-xs text-text-muted">
+                    Enable <code>mc-status</code> to show Minecraft server info.
+                  </p>
+                </div>
+                <ToggleSwitch
+                  checked={features.enableMcStatus !== false}
+                  onChange={(checked) =>
+                    saveDiscordSetting("features", { ...features, enableMcStatus: checked })
+                  }
+                  ariaLabel="Enable mc-status command"
+                />
+              </div>
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <span>Change Minecraft server</span>
+                  <p className="text-xs text-text-muted">
+                    Allow admins to run <code>mc-set</code> per Discord server.
+                  </p>
+                </div>
+                <ToggleSwitch
+                  checked={features.enableMcSet !== false}
+                  onChange={(checked) =>
+                    saveDiscordSetting("features", { ...features, enableMcSet: checked })
+                  }
+                  ariaLabel="Enable mc-set command"
+                />
+              </div>
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <span>Per-server prefixes</span>
+                  <p className="text-xs text-text-muted">
+                    Allow admins to run <code>set-prefix</code> to change the command prefix.
+                  </p>
+                </div>
+                <ToggleSwitch
+                  checked={features.enableSetPrefix !== false}
+                  onChange={(checked) =>
+                    saveDiscordSetting("features", { ...features, enableSetPrefix: checked })
+                  }
+                  ariaLabel="Enable set-prefix command"
+                />
+              </div>
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <span>Per-server nickname</span>
+                  <p className="text-xs text-text-muted">
+                    Allow admins to run <code>set-name</code> to change the bot nickname.
+                  </p>
+                </div>
+                <ToggleSwitch
+                  checked={features.enableSetName !== false}
+                  onChange={(checked) =>
+                    saveDiscordSetting("features", { ...features, enableSetName: checked })
+                  }
+                  ariaLabel="Enable set-name command"
+                />
+              </div>
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <span>Nodexity servers list</span>
+                  <p className="text-xs text-text-muted">
+                    Enable <code>nx-servers</code> to list Nodexity-managed servers.
+                  </p>
+                </div>
+                <ToggleSwitch
+                  checked={features.enableNxServers !== false}
+                  onChange={(checked) =>
+                    saveDiscordSetting("features", { ...features, enableNxServers: checked })
+                  }
+                  ariaLabel="Enable nx-servers command"
+                />
+              </div>
+            </div>
           </div>
         </motion.div>
       </div>
