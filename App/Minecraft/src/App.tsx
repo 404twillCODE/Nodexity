@@ -8,10 +8,11 @@ import ServerList from "./components/ServerList";
 import ServerDetailView from "./components/ServerDetailView";
 import SettingsView from "./components/SettingsView";
 import ConnectTunnelsView from "./components/ConnectTunnelsView";
+import DiscordView from "./components/DiscordView";
 import TitleBar from "./components/TitleBar";
 import { ToastProvider, useToast } from "./components/ToastProvider";
 
-type View = "servers" | "settings" | "playit" | "server-detail";
+type View = "servers" | "settings" | "discord" | "playit" | "server-detail";
 
 /** Listens for update-available and shows in-app toast (must be inside ToastProvider). */
 function UpdateNotifier() {
@@ -232,6 +233,8 @@ function App() {
         return <ServerList onServerClick={handleServerClick} />;
       case "settings":
         return <SettingsView />;
+      case "discord":
+        return <DiscordView />;
       case "playit":
         return <ConnectTunnelsView />;
       default:
@@ -331,7 +334,7 @@ function App() {
                 <div className="flex flex-1 min-h-0 overflow-hidden">
                   {currentView !== "server-detail" && (
                     <Sidebar
-                      currentView={sidebarView as "servers" | "settings" | "playit"}
+                      currentView={sidebarView as "servers" | "settings" | "discord" | "playit"}
                       onViewChange={(v) => setCurrentView(v)}
                       collapsed={appSettings?.sidebarCollapsed ?? false}
                       onCollapsedChange={(collapsed) => {

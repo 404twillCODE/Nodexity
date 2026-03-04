@@ -6,6 +6,7 @@ const isDev = !app.isPackaged || process.env.NODE_ENV === 'development';
 
 // Keep Nodexity data (servers, backups, config) in .nodexity; put Electron/Chromium caches in a subfolder
 const config = require('./modules/config');
+const discordBot = require('./modules/discord-bot');
 const ELECTRON_USER_DATA = path.join(config.NODEXITY_DIR, '_app');
 app.setPath('userData', ELECTRON_USER_DATA);
 
@@ -148,6 +149,12 @@ function applyAppSettings(settings) {
   }
 
   scheduleUpdateCheck();
+  // Apply Discord bot settings when app settings change
+  discordBot
+    .applyDiscordBotSettings(cachedSettings)
+    .catch((error) => {
+      console.error('[DiscordBot] Failed to apply settings:', error);
+    });
 }
 
 function createWindow() {

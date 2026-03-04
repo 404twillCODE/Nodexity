@@ -15,7 +15,9 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "discord.js": "^14.15.3",
     "framer-motion": "^12.23.26",
+    "minecraft-server-util": "^5.4.4",
     "prismarine-nbt": "^2.8.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
