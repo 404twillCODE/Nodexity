@@ -223,7 +223,7 @@ export default function ConsolePanel({ selectedServer: propSelectedServer }: Con
     setLines([]);
   };
 
-  // Common Minecraft server commands for autocomplete
+  // Common server commands for autocomplete
   const commonCommands = [
     'help', 'list', 'stop', 'kick', 'ban', 'pardon', 'ban-ip', 'pardon-ip',
     'whitelist', 'op', 'deop', 'tp', 'give', 'gamemode', 'time', 'weather',

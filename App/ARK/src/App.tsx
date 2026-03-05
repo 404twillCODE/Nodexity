@@ -8,10 +8,13 @@ import ServerList from "./components/ServerList";
 import ServerDetailView from "./components/ServerDetailView";
 import SettingsView from "./components/SettingsView";
 import ConnectTunnelsView from "./components/ConnectTunnelsView";
+import RconConsole from "./components/RconConsole";
+import DiscordBotView from "./components/DiscordBotView";
+import SteamCmdView from "./components/SteamCmdView";
 import TitleBar from "./components/TitleBar";
 import { ToastProvider, useToast } from "./components/ToastProvider";
 
-type View = "servers" | "settings" | "playit" | "server-detail";
+type View = "servers" | "rcon" | "discord" | "steamcmd" | "settings" | "playit" | "server-detail";
 
 /** Listens for update-available and shows in-app toast (must be inside ToastProvider). */
 function UpdateNotifier() {
@@ -51,7 +54,7 @@ function App() {
   const [currentView, setCurrentView] = useState<View>("servers");
   const [selectedServer, setSelectedServer] = useState<string | null>(null);
 
-  const sidebarView = currentView === "server-detail" ? "servers" : currentView;
+  const sidebarView = currentView === "server-detail" ? "servers" : currentView as "servers" | "rcon" | "discord" | "steamcmd" | "settings" | "playit";
   const [appSettings, setAppSettings] = useState<import("@/hooks/useServerManager").AppSettings>({});
   const [settingsLoaded, setSettingsLoaded] = useState(false);
   const setupFinalizedRef = useRef(false);
@@ -230,6 +233,12 @@ function App() {
     switch (currentView) {
       case "servers":
         return <ServerList onServerClick={handleServerClick} />;
+      case "rcon":
+        return <RconConsole />;
+      case "discord":
+        return <DiscordBotView />;
+      case "steamcmd":
+        return <SteamCmdView />;
       case "settings":
         return <SettingsView />;
       case "playit":
@@ -331,7 +340,7 @@ function App() {
                 <div className="flex flex-1 min-h-0 overflow-hidden">
                   {currentView !== "server-detail" && (
                     <Sidebar
-                      currentView={sidebarView as "servers" | "settings" | "playit"}
+                      currentView={sidebarView as "servers" | "rcon" | "discord" | "steamcmd" | "settings" | "playit"}
                       onViewChange={(v) => setCurrentView(v)}
                       collapsed={appSettings?.sidebarCollapsed ?? false}
                       onCollapsedChange={(collapsed) => {

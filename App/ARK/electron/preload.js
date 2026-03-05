@@ -89,6 +89,34 @@ contextBridge.exposeInMainWorld('electronAPI', {
       const handler = (event, data) => callback(data);
       ipcRenderer.on('update-available', handler);
       return () => ipcRenderer.removeListener('update-available', handler);
-    }
-  }
+    },
+  },
+  rcon: {
+    execute: (host, port, password, command, timeout) => ipcRenderer.invoke('rcon-execute', host, port, password, command, timeout),
+    test: (host, port, password) => ipcRenderer.invoke('rcon-test', host, port, password),
+  },
+  discord: {
+    getStatus: () => ipcRenderer.invoke('get-bot-status'),
+    action: (action) => ipcRenderer.invoke('bot-action', action),
+    getLogs: () => ipcRenderer.invoke('get-bot-logs'),
+    onLog: (callback) => {
+      const handler = (event, data) => callback(data);
+      ipcRenderer.on('bot-log', handler);
+      return () => ipcRenderer.removeListener('bot-log', handler);
+    },
+    onStatusUpdate: (callback) => {
+      const handler = (event, data) => callback(data);
+      ipcRenderer.on('bot-status-update', handler);
+      return () => ipcRenderer.removeListener('bot-status-update', handler);
+    },
+  },
+  steamcmd: {
+    checkVersions: () => ipcRenderer.invoke('steamcmd-check-versions'),
+    update: (force) => ipcRenderer.invoke('steamcmd-update', force),
+    onProgress: (callback) => {
+      const handler = (event, data) => callback(data);
+      ipcRenderer.on('steamcmd-progress', handler);
+      return () => ipcRenderer.removeListener('steamcmd-progress', handler);
+    },
+  },
 });

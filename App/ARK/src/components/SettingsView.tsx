@@ -4,7 +4,7 @@ import ToggleSwitch from "./ToggleSwitch";
 import { useToast } from "./ToastProvider";
 
 export default function SettingsView() {
-  const [activeTab, setActiveTab] = useState<'general' | 'server' | 'console' | 'dev' | 'about'>('general');
+  const [activeTab, setActiveTab] = useState<'general' | 'server' | 'rcon' | 'discord' | 'automation' | 'console' | 'dev' | 'about'>('general');
   const [settings, setSettings] = useState<import("../hooks/useServerManager").AppSettings | null>(null);
   const [loading, setLoading] = useState(true);
   const [devMode, setDevMode] = useState(false);
@@ -181,18 +181,18 @@ export default function SettingsView() {
       </motion.div>
 
       {/* Tabs */}
-      <div className="flex gap-2 mb-6 border-b border-border">
-        {(['general', 'server', 'console', 'dev', 'about'] as const).map((tab) => (
+      <div className="flex gap-2 mb-6 border-b border-border overflow-x-auto">
+        {(['general', 'server', 'rcon', 'discord', 'automation', 'console', 'dev', 'about'] as const).map((tab) => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
-            className={`px-4 py-2 text-sm font-mono uppercase tracking-wider transition-colors border-b-2 ${
+            className={`px-4 py-2 text-sm font-mono uppercase tracking-wider transition-colors border-b-2 whitespace-nowrap ${
               activeTab === tab
                 ? 'text-accent border-accent'
                 : 'text-text-secondary border-transparent hover:text-text-primary'
             }`}
           >
-            {tab === 'general' ? 'GENERAL' : tab === 'server' ? 'SERVER' : tab === 'console' ? 'CONSOLE' : tab === 'dev' ? 'DEV' : 'ABOUT'}
+            {tab}
           </button>
         ))}
       </div>
@@ -418,6 +418,30 @@ export default function SettingsView() {
                   </div>
                   <p className="text-xs text-text-muted mt-1">Folder containing ShooterGame\Binaries\Win64\ShooterGameServer.exe</p>
                 </div>
+                <div>
+                  <label className="block mb-2 text-text-primary">SteamCMD Path</label>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={settings?.steamCmdPath ?? ''}
+                      onChange={(e) => saveSetting('steamCmdPath', e.target.value)}
+                      placeholder="e.g. C:\SteamCMD\steamcmd.exe"
+                      className="flex-1 bg-background-secondary border border-border px-3 py-2 text-text-primary font-mono text-sm focus:outline-none focus:border-accent/50 rounded"
+                    />
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        if (!window.electronAPI?.server?.showFolderDialog) return;
+                        const res = await window.electronAPI.server.showFolderDialog({ title: 'Select SteamCMD folder', defaultPath: settings?.steamCmdPath });
+                        if (res?.success && res?.path) saveSetting('steamCmdPath', res.path);
+                      }}
+                      className="btn-secondary whitespace-nowrap"
+                    >
+                      BROWSE
+                    </button>
+                  </div>
+                  <p className="text-xs text-text-muted mt-1">Path to steamcmd.exe for server updates</p>
+                </div>
                 <div className="flex items-center justify-between">
                   <div>
                     <span>Auto-backup enabled</span>
@@ -456,6 +480,239 @@ export default function SettingsView() {
                     </div>
                   </div>
                 )}
+              </div>
+            </motion.div>
+          </>
+        )}
+
+        {/* RCON Settings */}
+        {activeTab === 'rcon' && (
+          <>
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.1, type: "spring", stiffness: 100, damping: 15 }}
+              className="system-card p-6"
+            >
+              <h2 className="text-lg font-semibold text-text-primary font-mono mb-4">
+                RCON Settings
+              </h2>
+              <div className="space-y-4 text-text-secondary font-mono text-sm">
+                <div>
+                  <label className="block mb-2 text-text-primary">Default RCON Port</label>
+                  <input
+                    type="number"
+                    min="1024"
+                    max="65535"
+                    value={Number(settings?.defaultRconPort) || 32330}
+                    onChange={(e) => saveSetting('defaultRconPort', parseInt(e.target.value) || 32330)}
+                    className="w-full bg-background-secondary border border-border px-3 py-2 text-text-primary font-mono text-sm focus:outline-none focus:border-accent/50 rounded"
+                  />
+                  <p className="text-xs text-text-muted mt-1">Default RCON port for connections</p>
+                </div>
+                <div>
+                  <label className="block mb-2 text-text-primary">Default RCON Password</label>
+                  <input
+                    type="password"
+                    value={(settings?.rcon as Record<string, unknown>)?.defaultPassword as string || ''}
+                    onChange={(e) => saveNestedSetting(['rcon', 'defaultPassword'], e.target.value)}
+                    className="w-full bg-background-secondary border border-border px-3 py-2 text-text-primary font-mono text-sm focus:outline-none focus:border-accent/50 rounded"
+                    placeholder="Pre-fill RCON console password"
+                  />
+                  <p className="text-xs text-text-muted mt-1">Pre-fills the RCON console password field</p>
+                </div>
+                <div>
+                  <label className="block mb-2 text-text-primary">RCON Timeout (seconds)</label>
+                  <input
+                    type="number"
+                    min="3"
+                    max="60"
+                    value={(settings?.rcon as Record<string, unknown>)?.timeout as number || 10}
+                    onChange={(e) => saveNestedSetting(['rcon', 'timeout'], parseInt(e.target.value) || 10)}
+                    className="w-full bg-background-secondary border border-border px-3 py-2 text-text-primary font-mono text-sm focus:outline-none focus:border-accent/50 rounded"
+                  />
+                  <p className="text-xs text-text-muted mt-1">How long to wait for RCON responses</p>
+                </div>
+              </div>
+            </motion.div>
+          </>
+        )}
+
+        {/* Discord Settings */}
+        {activeTab === 'discord' && (
+          <>
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.1, type: "spring", stiffness: 100, damping: 15 }}
+              className="system-card p-6"
+            >
+              <h2 className="text-lg font-semibold text-text-primary font-mono mb-4">
+                Discord Bot
+              </h2>
+              <div className="space-y-4 text-text-secondary font-mono text-sm">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <span>Enable Discord bot</span>
+                    <p className="text-xs text-text-muted">Allow the Discord bot to be started</p>
+                  </div>
+                  <ToggleSwitch
+                    checked={(settings?.discord as Record<string, unknown>)?.enabled as boolean || false}
+                    onChange={(checked) => saveNestedSetting(['discord', 'enabled'], checked)}
+                    ariaLabel="Enable Discord bot"
+                  />
+                </div>
+                <div>
+                  <label className="block mb-2 text-text-primary">Bot Token</label>
+                  <input
+                    type="password"
+                    value={(settings?.discord as Record<string, unknown>)?.token as string || ''}
+                    onChange={(e) => saveNestedSetting(['discord', 'token'], e.target.value)}
+                    className="w-full bg-background-secondary border border-border px-3 py-2 text-text-primary font-mono text-sm focus:outline-none focus:border-accent/50 rounded"
+                    placeholder="Discord bot token"
+                  />
+                  <p className="text-xs text-text-muted mt-1">
+                    Create a bot at{" "}
+                    <a href="https://discord.com/developers/applications" target="_blank" rel="noopener noreferrer" className="text-accent hover:underline">
+                      discord.com/developers
+                    </a>
+                  </p>
+                </div>
+                <div>
+                  <label className="block mb-2 text-text-primary">Allowed User IDs</label>
+                  <input
+                    type="text"
+                    value={((settings?.discord as Record<string, unknown>)?.allowedUserIds as string[] || []).join(', ')}
+                    onChange={(e) => saveNestedSetting(['discord', 'allowedUserIds'], e.target.value.split(',').map(s => s.trim()).filter(Boolean))}
+                    className="w-full bg-background-secondary border border-border px-3 py-2 text-text-primary font-mono text-sm focus:outline-none focus:border-accent/50 rounded"
+                    placeholder="123456789, 987654321"
+                  />
+                  <p className="text-xs text-text-muted mt-1">Comma-separated Discord user IDs allowed to use admin commands. Leave empty to allow all.</p>
+                </div>
+              </div>
+            </motion.div>
+
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.2, type: "spring", stiffness: 100, damping: 15 }}
+              className="system-card p-6"
+            >
+              <h2 className="text-lg font-semibold text-text-primary font-mono mb-4">
+                Server Join Info
+              </h2>
+              <p className="text-xs text-text-muted font-mono mb-4">
+                These are shown when users run <code className="text-accent">/ark ip</code> in Discord.
+              </p>
+              <div className="space-y-4 text-text-secondary font-mono text-sm">
+                <div>
+                  <label className="block mb-2 text-text-primary">Server Join IP</label>
+                  <input
+                    type="text"
+                    value={(settings?.discord as Record<string, unknown>)?.serverJoinIp as string || ''}
+                    onChange={(e) => saveNestedSetting(['discord', 'serverJoinIp'], e.target.value)}
+                    className="w-full bg-background-secondary border border-border px-3 py-2 text-text-primary font-mono text-sm focus:outline-none focus:border-accent/50 rounded"
+                    placeholder="your-server.com or public IP"
+                  />
+                </div>
+                <div>
+                  <label className="block mb-2 text-text-primary">Server Join Port</label>
+                  <input
+                    type="text"
+                    value={(settings?.discord as Record<string, unknown>)?.serverJoinPort as string || ''}
+                    onChange={(e) => saveNestedSetting(['discord', 'serverJoinPort'], e.target.value)}
+                    className="w-full bg-background-secondary border border-border px-3 py-2 text-text-primary font-mono text-sm focus:outline-none focus:border-accent/50 rounded"
+                    placeholder="27015"
+                  />
+                </div>
+                <div>
+                  <label className="block mb-2 text-text-primary">Server Password</label>
+                  <input
+                    type="password"
+                    value={(settings?.discord as Record<string, unknown>)?.serverPassword as string || ''}
+                    onChange={(e) => saveNestedSetting(['discord', 'serverPassword'], e.target.value)}
+                    className="w-full bg-background-secondary border border-border px-3 py-2 text-text-primary font-mono text-sm focus:outline-none focus:border-accent/50 rounded"
+                    placeholder="Server password (if any)"
+                  />
+                </div>
+              </div>
+            </motion.div>
+          </>
+        )}
+
+        {/* Automation Settings */}
+        {activeTab === 'automation' && (
+          <>
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.1, type: "spring", stiffness: 100, damping: 15 }}
+              className="system-card p-6"
+            >
+              <h2 className="text-lg font-semibold text-text-primary font-mono mb-4">
+                Automation
+              </h2>
+              <div className="space-y-4 text-text-secondary font-mono text-sm">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <span>Auto-pause (slomo)</span>
+                    <p className="text-xs text-text-muted">Slow server time when 0 players (requires RCON)</p>
+                  </div>
+                  <ToggleSwitch
+                    checked={(settings?.automation as Record<string, unknown>)?.autoPause as boolean || false}
+                    onChange={(checked) => saveNestedSetting(['automation', 'autoPause'], checked)}
+                    ariaLabel="Auto-pause"
+                  />
+                </div>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <span>Auto-shutdown</span>
+                    <p className="text-xs text-text-muted">Stop server after no players for a set time</p>
+                  </div>
+                  <ToggleSwitch
+                    checked={(settings?.automation as Record<string, unknown>)?.autoShutdown as boolean || false}
+                    onChange={(checked) => saveNestedSetting(['automation', 'autoShutdown'], checked)}
+                    ariaLabel="Auto-shutdown"
+                  />
+                </div>
+                {Boolean((settings?.automation as Record<string, unknown>)?.autoShutdown) && (
+                  <div className="pl-4 border-l-2 border-border">
+                    <label className="block mb-2 text-text-primary">Shutdown delay (minutes)</label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="120"
+                      value={(settings?.automation as Record<string, unknown>)?.autoShutdownMinutes as number || 10}
+                      onChange={(e) => saveNestedSetting(['automation', 'autoShutdownMinutes'], parseInt(e.target.value) || 10)}
+                      className="w-full bg-background-secondary border border-border px-3 py-2 text-text-primary font-mono text-sm focus:outline-none focus:border-accent/50 rounded"
+                    />
+                    <p className="text-xs text-text-muted mt-1">Minutes to wait with 0 players before stopping</p>
+                  </div>
+                )}
+                <div>
+                  <label className="block mb-2 text-text-primary">Player check interval (seconds)</label>
+                  <input
+                    type="number"
+                    min="5"
+                    max="300"
+                    value={(settings?.automation as Record<string, unknown>)?.playerCheckInterval as number || 30}
+                    onChange={(e) => saveNestedSetting(['automation', 'playerCheckInterval'], parseInt(e.target.value) || 30)}
+                    className="w-full bg-background-secondary border border-border px-3 py-2 text-text-primary font-mono text-sm focus:outline-none focus:border-accent/50 rounded"
+                  />
+                  <p className="text-xs text-text-muted mt-1">How often to poll RCON for player count (requires RCON)</p>
+                </div>
+                <div>
+                  <label className="block mb-2 text-text-primary">Stats refresh interval (seconds)</label>
+                  <input
+                    type="number"
+                    min="5"
+                    max="300"
+                    value={(settings?.automation as Record<string, unknown>)?.statsRefreshInterval as number || 30}
+                    onChange={(e) => saveNestedSetting(['automation', 'statsRefreshInterval'], parseInt(e.target.value) || 30)}
+                    className="w-full bg-background-secondary border border-border px-3 py-2 text-text-primary font-mono text-sm focus:outline-none focus:border-accent/50 rounded"
+                  />
+                  <p className="text-xs text-text-muted mt-1">How often to refresh server CPU/RAM stats</p>
+                </div>
               </div>
             </motion.div>
           </>

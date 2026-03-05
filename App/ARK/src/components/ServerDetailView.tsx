@@ -6,8 +6,7 @@ import { useToast } from "./ToastProvider";
 import StatusBadge from "./StatusBadge";
 import FileEditor from "./FileEditor";
 import PluginManager from "./PluginManager";
-import ModManager from "./ModManager";
-import WorldManager from "./WorldManager";
+// Mod and world managers are specific to the Minecraft app and are not used in the ARK app.
 import ServerPropertiesEditor from "./ServerPropertiesEditor";
 import { lineHasServerTimestamp } from "../utils/consoleUtils";
 
@@ -16,7 +15,7 @@ interface ServerDetailViewProps {
   onBack: () => void;
 }
 
-type Tab = "dashboard" | "console" | "files" | "plugins" | "mods" | "worlds" | "properties" | "settings";
+type Tab = "dashboard" | "console" | "files" | "properties" | "settings";
 
 interface ConsoleLine {
   id: string;
@@ -507,7 +506,7 @@ export default function ServerDetailView({ serverName, onBack }: ServerDetailVie
     return filtered;
   }, [lines, filterType, debouncedSearchQuery]);
 
-  // Common Minecraft server commands for autocomplete
+  // Common server commands for autocomplete
   const commonCommands = [
     'help', 'list', 'stop', 'kick', 'ban', 'pardon', 'ban-ip', 'pardon-ip',
     'whitelist', 'op', 'deop', 'tp', 'give', 'gamemode', 'time', 'weather',
@@ -1429,18 +1428,6 @@ export default function ServerDetailView({ serverName, onBack }: ServerDetailVie
 
         {activeTab === "files" && (
           <FileEditor serverName={serverName} />
-        )}
-
-        {activeTab === "plugins" && (
-          <PluginManager serverName={serverName} />
-        )}
-
-        {activeTab === "mods" && (
-          <ModManager serverName={serverName} />
-        )}
-
-        {activeTab === "worlds" && (
-          <WorldManager serverName={serverName} />
         )}
 
         {activeTab === "properties" && (

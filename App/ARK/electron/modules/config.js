@@ -143,6 +143,7 @@ async function getAppSettings() {
     notifications: { statusChanges: true, crashes: true, updates: true },
     defaultPort: 7777,
     defaultQueryPort: 27015,
+    defaultRconPort: 32330,
     devMode: false,
     consoleAutoScroll: true,
     maxConsoleLines: 1000,
@@ -153,8 +154,38 @@ async function getAppSettings() {
     consoleWordWrap: false,
     consoleFontSize: 12,
     debugLogging: false,
-    logLevel: 'info'
+    logLevel: 'info',
+    rcon: {
+      defaultPassword: '',
+      timeout: 10,
+    },
+    discord: {
+      enabled: false,
+      token: '',
+      allowedUserIds: [],
+      serverJoinIp: '',
+      serverJoinPort: '',
+      serverPassword: '',
+    },
+    automation: {
+      autoPause: false,
+      autoShutdown: false,
+      autoShutdownMinutes: 10,
+      playerCheckInterval: 30,
+      statsRefreshInterval: 30,
+    },
   };
+}
+
+async function getDiscordConfig() {
+  const settings = await getAppSettings();
+  return settings.discord || {};
+}
+
+async function saveDiscordConfig(discordConfig) {
+  const settings = await getAppSettings();
+  settings.discord = { ...(settings.discord || {}), ...discordConfig };
+  return saveAppSettings(settings);
 }
 
 async function saveAppSettings(settings) {
@@ -212,4 +243,6 @@ module.exports = {
   resetSetup,
   getNodexityDir,
   showFolderDialog,
+  getDiscordConfig,
+  saveDiscordConfig,
 };

@@ -675,6 +675,88 @@ ipcMain.handle('update-server-ram', async (event, serverName, ramGB) => {
   return await serverManager.updateServerRAM(serverName, ramGB);
 });
 
+// ---- RCON ----
+ipcMain.handle('rcon-execute', async (event, host, port, password, command, timeout) => {
+  try {
+    const response = await serverManager.rconCommand(host, port, password, command, timeout);
+    return { success: true, response };
+  } catch (err) {
+    return { success: false, response: err.message };
+  }
+});
+
+ipcMain.handle('rcon-test', async (event, host, port, password) => {
+  try {
+    const ok = await serverManager.testRcon(host, port, password, 5000);
+    return { success: ok };
+  } catch {
+    return { success: false };
+  }
+});
+
+// ---- Discord Bot ----
+const discordBot = serverManager.discordBot;
+
+discordBot.on('log', (entry) => {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('bot-log', entry);
+  }
+});
+
+discordBot.on('status', (data) => {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('bot-status-update', data);
+  }
+});
+
+ipcMain.handle('get-bot-status', () => discordBot.getStatus());
+
+ipcMain.handle('bot-action', async (event, action) => {
+  try {
+    if (action === 'start') {
+      const settings = await serverManager.getAppSettings();
+      const discordConfig = settings.discord || {};
+      await discordBot.start(discordConfig);
+      return { success: true, message: 'Bot started' };
+    } else if (action === 'stop') {
+      await discordBot.stop();
+      return { success: true, message: 'Bot stopped' };
+    }
+    return { success: false, message: 'Unknown action' };
+  } catch (err) {
+    return { success: false, message: err.message };
+  }
+});
+
+ipcMain.handle('get-bot-logs', () => discordBot.getLogs());
+
+// ---- SteamCMD ----
+const steamcmd = serverManager.steamcmd;
+
+ipcMain.handle('steamcmd-check-versions', async () => {
+  try {
+    return await steamcmd.checkVersions();
+  } catch (err) {
+    return { serverVersion: null, gameVersion: null, error: err.message };
+  }
+});
+
+ipcMain.handle('steamcmd-update', async (event, force) => {
+  try {
+    const result = await steamcmd.updateServer(
+      (msg) => {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('steamcmd-progress', msg);
+        }
+      },
+      force,
+    );
+    return result;
+  } catch (err) {
+    return { success: false, message: err.message, hadUpdate: false };
+  }
+});
+
 ipcMain.handle('send-server-command', async (event, serverName, command) => {
   const process = serverManager.getServerProcess(serverName);
   if (process) {
@@ -753,12 +835,14 @@ let shutdownInProgress = false;
 
 async function stopAllServers() {
   try {
+    if (discordBot.running) {
+      try { await discordBot.stop(); } catch {}
+    }
     const servers = await serverManager.listServers();
     const stopPromises = servers
       .filter(server => server.status === 'RUNNING' || server.status === 'STARTING')
       .map(server => serverManager.stopServer(server.id));
 
-    // Stop all servers in parallel and wait for completion
     await Promise.allSettled(stopPromises);
   } catch (error) {
     console.error('Error stopping servers on shutdown:', error);

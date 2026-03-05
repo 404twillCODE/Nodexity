@@ -393,7 +393,7 @@ export default function ServerList({ onServerClick }: ServerListProps) {
               SERVERS
             </h1>
             <p className="text-text-secondary font-mono text-sm">
-              Manage your Minecraft server instances
+              Manage your ARK server instances
             </p>
           </div>
           <div className="flex items-center gap-4">

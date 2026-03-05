@@ -6,7 +6,7 @@ export default function ConnectTunnelsView() {
           Connect tunnels
         </h1>
         <p className="text-sm text-text-secondary text-center">
-          Give your Minecraft server a public address without port forwarding. Use any tunneling tool you like; run it on your machine and point it at your server port.
+          Give your ARK server a public address without port forwarding. Use any tunneling tool you like; run it on your machine and point it at your server port.
         </p>
 
         <div className="system-card p-6 border-l-4 border-accent space-y-4">
@@ -17,21 +17,21 @@ export default function ConnectTunnelsView() {
             <li>
               <strong className="text-text-primary">playit.gg</strong> — Install from{" "}
               <a href="https://playit.gg/download" target="_blank" rel="noopener noreferrer" className="text-accent hover:underline">playit.gg/download</a>.
-              Run the app, add a Minecraft tunnel for your server port (e.g. 25565), then share the address it gives you.
+              Run the app, add a tunnel for your ARK server port (e.g. 7777), then share the address it gives you.
             </li>
             <li>
               <strong className="text-text-primary">ngrok</strong> — Install ngrok, then run e.g.{" "}
-              <code className="text-accent bg-background-secondary px-1 rounded">ngrok tcp 25565</code>.
-              Use the TCP address it shows for Minecraft.
+              <code className="text-accent bg-background-secondary px-1 rounded">ngrok tcp 7777</code>.
+              Use the TCP address it shows for your server.
             </li>
             <li>
               <strong className="text-text-primary">localtunnel</strong> — With Node.js:{" "}
-              <code className="text-accent bg-background-secondary px-1 rounded">npx localtunnel --port 25565</code>.
-              Note: Minecraft uses TCP; some tunnel tools expose HTTP by default — use one that supports TCP or the correct protocol.
+              <code className="text-accent bg-background-secondary px-1 rounded">npx localtunnel --port 7777</code>.
+              Note: Some tunnel tools expose HTTP by default — use one that supports the protocol your ARK server uses.
             </li>
             <li>
-              <strong className="text-text-primary">Cloudflare Tunnel (cloudflared)</strong> — Install cloudflared, create a tunnel, and configure a TCP route to{" "}
-              <code className="text-accent bg-background-secondary px-1 rounded">localhost:25565</code> (or your server port).
+              <strong className="text-text-primary">Cloudflare Tunnel (cloudflared)</strong> — Install cloudflared, create a tunnel, and configure a route to{" "}
+              <code className="text-accent bg-background-secondary px-1 rounded">localhost:7777</code> (or your server port).
             </li>
           </ul>
           <p className="text-xs text-text-muted pt-2 border-t border-border">

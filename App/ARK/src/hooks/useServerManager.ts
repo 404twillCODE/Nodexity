@@ -6,6 +6,7 @@ export interface AppSettings {
   defaultRAM?: number;
   defaultPort?: number;
   defaultQueryPort?: number;
+  defaultRconPort?: number;
   serversDirectory?: string;
   backupsDirectory?: string;
   arkInstallPath?: string;
@@ -27,6 +28,25 @@ export interface AppSettings {
   consoleFontSize?: number;
   notifications?: { updates?: boolean; statusChanges?: boolean; crashes?: boolean };
   sidebarCollapsed?: boolean;
+  rcon?: {
+    defaultPassword?: string;
+    timeout?: number;
+  };
+  discord?: {
+    enabled?: boolean;
+    token?: string;
+    allowedUserIds?: string[];
+    serverJoinIp?: string;
+    serverJoinPort?: string;
+    serverPassword?: string;
+  };
+  automation?: {
+    autoPause?: boolean;
+    autoShutdown?: boolean;
+    autoShutdownMinutes?: number;
+    playerCheckInterval?: number;
+    statsRefreshInterval?: number;
+  };
   [key: string]: unknown;
 }
 
@@ -39,6 +59,22 @@ declare global {
         close: () => void;
         onClosePrompt: (callback: () => void) => () => void;
         respondToClosePrompt: (confirmed: boolean) => void;
+      };
+      rcon?: {
+        execute: (host: string, port: number, password: string, command: string, timeout?: number) => Promise<{ success: boolean; response: string }>;
+        test: (host: string, port: number, password: string) => Promise<{ success: boolean }>;
+      };
+      discord?: {
+        getStatus: () => Promise<{ running: boolean; username: string | null; guilds: number }>;
+        action: (action: string) => Promise<{ success: boolean; message: string }>;
+        getLogs: () => Promise<Array<{ timestamp: string; level: string; message: string }>>;
+        onLog: (callback: (entry: { timestamp: string; level: string; message: string }) => void) => () => void;
+        onStatusUpdate: (callback: (data: { running: boolean; username: string | null; guilds: number }) => void) => () => void;
+      };
+      steamcmd?: {
+        checkVersions: () => Promise<{ serverVersion: string | null; gameVersion: string | null; error?: string }>;
+        update: (force?: boolean) => Promise<{ success: boolean; message: string; hadUpdate: boolean }>;
+        onProgress: (callback: (msg: string) => void) => () => void;
       };
       server: {
         checkJava: () => Promise<{ installed: boolean; version: string | null }>;
