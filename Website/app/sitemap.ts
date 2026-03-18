@@ -14,6 +14,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
     "/launcher",
     "/newsletter",
     "/privacy",
+    "/pure",
     "/settings",
     "/software",
     "/status",
